@@ -11,6 +11,8 @@
 
 #define TAM 200
 TCHAR szName[] = TEXT("Global\\publicNamedPipe");
+DWORD WINAPI processAdminComands(LPVOID param);
+
 
 
 
@@ -37,14 +39,14 @@ int _tmain(int argc, TCHAR* argv[]) {
 	int max_letras, ritmo;
 	getRegistryValues(&max_letras, &ritmo);
 
-	TCHAR* letras_jogo = (char*)malloc(max_letras * sizeof(char));
+	TCHAR* letras_jogo = (TCHAR*)malloc(max_letras * sizeof(TCHAR));
 
-    TCHAR abecedario[26] = {
-        _T('A'), _T('B'), _T('C'), _T('D'), _T('E'), _T('F'), _T('G'), _T('H'),
-        _T('I'), _T('J'), _T('K'), _T('L'), _T('M'), _T('N'), _T('O'), _T('P'),
-        _T('Q'), _T('R'), _T('S'), _T('T'), _T('U'), _T('V'), _T('W'), _T('X'),
-        _T('Y'), _T('Z')
-    };
+	TCHAR abecedario[26] = {
+		_T('A'), _T('B'), _T('C'), _T('D'), _T('E'), _T('F'), _T('G'), _T('H'),
+		_T('I'), _T('J'), _T('K'), _T('L'), _T('M'), _T('N'), _T('O'), _T('P'),
+		_T('Q'), _T('R'), _T('S'), _T('T'), _T('U'), _T('V'), _T('W'), _T('X'),
+		_T('Y'), _T('Z')
+	};
 
 	if (letras_jogo == NULL) {
 		_tprintf(_T("Erro a alocar memória!\n"));
@@ -56,7 +58,10 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	DWORD adminThreadId;
 	//lança thread que ouve comandos do admin
-	HANDLE hThreadAdmin = CreateThread(
+	/**/
+	HANDLE hThreadAdmin;
+	
+	hThreadAdmin = CreateThread(
 		NULL,
 		0,
 		processAdminComands,
@@ -66,10 +71,12 @@ int _tmain(int argc, TCHAR* argv[]) {
 	);
 
 	if (hThreadAdmin == NULL) {
-		printf("Erro ao criar thread: %lu\n", GetLastError());
+		_tprintf("Erro ao criar thread: %lu\n", GetLastError());
 		return 1;
 	}
+	
 
+	
 
 
 
@@ -173,3 +180,19 @@ TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras) {
 	return letra;
 }
 
+<<<<<<< HEAD
+=======
+
+DWORD WINAPI processAdminComands(LPVOID param) {
+	_tprintf(_T("Thread Admin a correr!\n"));
+
+	return 0;
+}
+
+
+
+DWORD WINAPI admitUsers(LPVOID param) {
+	_tprintf(_T("Thread admitUsers a correr!\n"));
+	return 0;
+}
+>>>>>>> 39c6d1e3a8fda6f13913b5ddc2c36f50d83a2007
