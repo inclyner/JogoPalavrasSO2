@@ -15,20 +15,6 @@ DWORD WINAPI processAdminComands(LPVOID param);
 
 
 
-
-DWORD WINAPI processAdminComands(LPVOID param) {
-	printf("Thread Admin a correr!\n");
-
-	return 0;
-}
-
-
-
-DWORD WINAPI admitUsers(LPVOID param) {
-	printf("Thread admitUsers a correr!\n");
-	return 0;
-}
-
 int _tmain(int argc, TCHAR* argv[]) {
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -180,9 +166,6 @@ TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras) {
 	return letra;
 }
 
-<<<<<<< HEAD
-=======
-
 DWORD WINAPI processAdminComands(LPVOID param) {
 	_tprintf(_T("Thread Admin a correr!\n"));
 
@@ -195,4 +178,3 @@ DWORD WINAPI admitUsers(LPVOID param) {
 	_tprintf(_T("Thread admitUsers a correr!\n"));
 	return 0;
 }
->>>>>>> 39c6d1e3a8fda6f13913b5ddc2c36f50d83a2007
