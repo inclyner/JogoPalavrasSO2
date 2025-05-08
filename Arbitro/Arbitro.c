@@ -12,6 +12,21 @@
 #define TAM 200
 TCHAR szName[] = TEXT("Global\\publicNamedPipe");
 
+
+
+DWORD WINAPI processAdminComands(LPVOID param) {
+	printf("Thread Admin a correr!\n");
+
+	return 0;
+}
+
+
+
+DWORD WINAPI admitUsers(LPVOID param) {
+	printf("Thread admitUsers a correr!\n");
+	return 0;
+}
+
 int _tmain(int argc, TCHAR* argv[]) {
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -158,16 +173,3 @@ TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras) {
 	return letra;
 }
 
-
-DWORD WINAPI processAdminComands(LPVOID param) {
-	printf("Thread Admin a correr!\n");
-
-	return 0;
-}
-
-
-
-DWORD WINAPI admitUsers(LPVOID param) {
-	printf("Thread admitUsers a correr!\n");
-	return 0;
-}
