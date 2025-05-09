@@ -7,11 +7,17 @@
 #include <stdio.h>
 #include <winreg.h>
 
-
-
+#define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
 #define TAM 200
-TCHAR szName[] = TEXT("Global\\publicNamedPipe");
-DWORD WINAPI processAdminComands(LPVOID param);
+#define MAX_CONCURRENT_USERS 20
+#define MINIMUM_GAME_PLAYERS 2
+
+
+
+// prototipos funções
+DWORD WINAPI processArbitroComands(LPVOID param);
+TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras);
+
 
 
 int _tmain(int argc, TCHAR* argv[]) {
@@ -44,23 +50,40 @@ int _tmain(int argc, TCHAR* argv[]) {
 	DWORD adminThreadId;
 	//lança thread que ouve comandos do admin
 	/**/
-	HANDLE hThreadAdmin;
+	HANDLE hThreadArbitro;
+	HANDLE hThreadAdmitUsers;
 	
-	hThreadAdmin = CreateThread(
+	hThreadArbitro = CreateThread(
 		NULL,
 		0,
-		processAdminComands,
+		processArbitroComands,
 		NULL,
 		0,
 		&adminThreadId
 	);
 
-	if (hThreadAdmin == NULL) {
-		_tprintf("Erro ao criar thread: %lu\n", GetLastError());
+	if (hThreadArbitro == NULL) {
+		_tprintf("Erro ao criar thread(arbitro): %lu\n", GetLastError());
+		return 1;
+	}
+	
+	hThreadAdmitUsers = CreateThread(
+		NULL,
+		0,
+		admitUsers,
+		NULL,
+		0,
+		&adminThreadId
+	);
+	if (hThreadAdmitUsers == NULL) {
+		_tprintf("Erro ao criar thread(AdmitUsers): %lu\n", GetLastError());
 		return 1;
 	}
 	
 
+	//TODO main loop do jogo
+	//while (currentUsers >= MINIMUM_GAME_PLAYERS)
+	//{}
 	
 
 
@@ -70,10 +93,11 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 
 
-	WaitForSingleObject(hThreadAdmin, INFINITE);
+	WaitForSingleObject(hThreadArbitro, INFINITE);
 	// Libertar memória
 	free(letras_jogo);
-	CloseHandle(hThreadAdmin);
+	CloseHandle(hThreadArbitro);
+	CloseHandle(hThreadAdmitUsers);
 
 
 	return 0;
@@ -120,8 +144,8 @@ int getRegistryValues(int* maxletras, int* ritmo) {
 			return 1;
 		}
 
-		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
-		RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
+		//RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+		//RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
 	}
 	
 	tam = sizeof(DWORD);
@@ -131,20 +155,30 @@ int getRegistryValues(int* maxletras, int* ritmo) {
 		valMaxLetras = 6;
 		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
 	}
-
+	else
+	{
+		_tprintf(_T("MAXLETRAS lido! => %d\n"), valMaxLetras);
+		if (valMaxLetras > 12) {
+			_tprintf(_T("MAXLETRAS superior a 12. A corrigir para 12.\n"));
+			valMaxLetras = 12;
+			RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+		}
+	}
 	res = RegQueryValueEx(hKey, _T("RITMO"), NULL, &tipo, (LPBYTE)&valRitmo, &tam);
 	if (res != ERROR_SUCCESS) {
 		_tprintf(_T("RITMO não existe, a criar com valor 3.\n"));
 		valRitmo = 3;
 		RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
 	}
-
-
-	if (valMaxLetras > 12) {
-		_tprintf(_T("MAXLETRAS > 12. A corrigir para 12.\n"));
-		valMaxLetras = 12;
-		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+	else
+	{
+		_tprintf(_T("RITMO lido! => %d\n"), valRitmo);
 	}
+
+
+	
+
+
 
 	RegCloseKey(hKey);
 	*maxletras = valMaxLetras;
@@ -161,13 +195,19 @@ TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras) {
 		_tprintf(_T("Erro a alocar memória!\n"));
 		return NULL;
 	}
-	*letra = abecedario[randomIndex];
+	letra = abecedario[randomIndex];
 	return letra;
 }
 
 
-DWORD WINAPI processAdminComands(LPVOID param) {
-	_tprintf(_T("Thread Admin a correr!\n"));
+DWORD WINAPI processArbitroComands(LPVOID param) {
+	_tprintf(_T("Thread processArbitroComands a correr!\n"));
+	int isLeaving = 0;
+
+	while (isLeaving) {
+
+
+	}
 
 	return 0;
 }
@@ -176,5 +216,44 @@ DWORD WINAPI processAdminComands(LPVOID param) {
 
 DWORD WINAPI admitUsers(LPVOID param) {
 	_tprintf(_T("Thread admitUsers a correr!\n"));
+	int nCurrentUsers = 0;
+	while (nCurrentUsers <= MAX_CONCURRENT_USERS)
+	{
+		//TODO lógica para admitir utilizadores
+		//ler pipe PIPE_NAME até haver algo
+
+
+	}
+
+
 	return 0;
+}
+
+
+DWORD processUserComands(LPVOID param) {
+	_tprintf(_T("Thread processUserComands a correr!\n"));
+	int isLeaving = 0;
+	TCHAR command[250];
+
+	while (isLeaving) {
+	
+		//TODO ler comando do pipe
+
+		// comando sair
+		if (_tcsstr(command, _T("sair")) != NULL) {
+			isLeaving = 1;
+			_tprintf(_T("A sair do jogo...\n"));
+			break;
+		}
+
+		// comando pont => obter pontuação do próprio jogador
+		if (_tcsstr(command, _T("pont")) != NULL) {
+			//TODO lógica para obter a própria pontuação
+		}
+
+		// comando jogs => obter lista de jogadores
+		if (_tcsstr(command, _T("jogs")) != NULL) {
+			//TODO lógica para obter a lista dos jogadores
+		}
+	}
 }
