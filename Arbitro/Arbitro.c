@@ -13,19 +13,137 @@
 #define MINIMUM_GAME_PLAYERS 2
 
 
+typedef struct {
+	HANDLE hPipe[MAX_CONCURRENT_USERS];
+	HANDLE hMutex;
+	BOOL continua;
+}TDATA;
+
+
 
 // prototipos funções
 DWORD WINAPI processArbitroComands(LPVOID param);
 TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras);
 
 
+// nesta thread o arbitro vai receber os pedido neste caso as palavras ou os comandos 
+// e vai fazer fazer o que tem a fazer sobre os pontos e tudo mais 
+// e depois envia por exemplo os pontos ao user ou que ele pediu nos comandos
+DWORD WINAPI atende_cliente(LPVOID data) {
+	HANDLE hPipe = (HANDLE)data;
+	TCHAR buf[256];
+	DWORD n;
+	BOOL ret;
+
+	//FORA CILCO...
+	OVERLAPPED ov;
+	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+	do {
+		ZeroMemory(&ov, sizeof(OVERLAPPED));
+		ov.hEvent = hEv;
+		//ANTEs da operaçao 
+		ret = ReadFile(hPipe, buf, sizeof(buf), &n, &ov);
+		if (!ret && GetLastError() != ERROR_IO_PENDING) {
+			_tprintf_s(_T("[ERROR READ] %d (%d bytes)... (ReadFile)\n"), ret, n);
+			break;
+		}
+		if (GetLastError() == ERROR_IO_PENDING) {
+			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+			GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+		}
+		buf[n / sizeof(TCHAR)] = _T('\0');
+
+		_tprintf_s(_T("[ESCRITOR] Recebi '%s'(%d bytes) ...... (ReadFile)\n"), buf, n);
+			// PROCESSAMENTO
+		CharUpper(buf);
+		// TODO todo o processamento vai ser feito aqui
+		//ANTES DA OPERACAO 
+
+		// envia a resposta
+		ret = WriteFile(hPipe, buf, (DWORD)_tcslen(buf) * sizeof(TCHAR), &n, NULL);
+		if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+			_tprintf_s(_T("[ERROR] Write failed code(%d)\n"), GetLastError());
+			break;
+		}
+		if (GetLastError() == ERROR_IO_PENDING) {
+			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+			GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+		}
+		_tprintf_s(_T("[ARBITRO] Resposta '%s'(%d bytes) ... (WriteFile)\n"), buf, n);
+	} while (1);
+	CloseHandle(hEv);
+
+	ExitThread(0);
+}
+
+
+// Nesta thread tratamos os comandos do arbitro e enviamos o que seja necessario para todos os utilizadores
+DWORD WINAPI distribui(LPVOID data) {
+	TDATA* ptd = (TDATA*)data;
+	TCHAR buf[256];
+	DWORD n, i;
+	TDATA td;
+	BOOL ret;
+	// FOra do cliclo 
+	OVERLAPPED ov;
+	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+	do {
+		_tprintf_s(_T("[ESCRITOR] Frase: "));
+		_fgetts(buf, 256, stdin);
+		buf[_tcslen(buf) - 1] = '\0';
+
+		WaitForSingleObject(ptd->hMutex, INFINITE);
+		td = *ptd;
+		ReleaseMutex(ptd->hMutex);
+
+		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+			if (td.hPipe[i] != NULL) {
+				//ANTES Da operacao 
+				ZeroMemory(&ov, sizeof(OVERLAPPED));
+				ov.hEvent = hEv;
+				ret = WriteFile(td.hPipe[i], buf, (DWORD)_tcslen(buf) * sizeof(TCHAR), &n, &ov);
+				if (!ret && GetLastError() != ERROR_IO_PENDING) {
+					_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
+					break;
+				}
+				if (GetLastError() == ERROR_IO_PENDING) {
+					WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+					GetOverlappedResult(td.hPipe[i], &ov, &n, FALSE); // obter resultado da operacao
+				}
+			}
+			_tprintf_s(_T("[ESCRITOR] Enviei %d bytes ao leitor...  (i = %d) (WriteFile)\n"), n, i);
+		}
+	} while (_tcsicmp(buf, _T("fim")));
+
+	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+		if (td.hPipe[i] != NULL) {
+			FlushFileBuffers(td.hPipe[i]);
+			_tprintf_s(_T("[ESCRITOR] Desligar o pipe (DisconnectNamedPipe)\n"));
+			if (!DisconnectNamedPipe(td.hPipe[i])) {
+				_tprintf_s(_T("[ERRO] Desligar o pipe! (DisconnectNamedPipe)"));
+				exit(-1);
+			}
+			CloseHandle(td.hPipe[i]);
+		}
+	}
+	CloseHandle(hEv);
+	ExitThread(0);
+}
+
+
 
 int _tmain(int argc, TCHAR* argv[]) {
+
+	DWORD i;
+	HANDLE hPipe;
+	TCHAR buf[256];
+
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
 	_setmode(_fileno(stdout), _O_WTEXT);
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
+
 
 	int max_letras, ritmo;
 	getRegistryValues(&max_letras, &ritmo);
@@ -47,9 +165,10 @@ int _tmain(int argc, TCHAR* argv[]) {
 		letras_jogo[i] = _T('_');
 	}
 
+	/*
 	DWORD adminThreadId;
 	//lança thread que ouve comandos do admin
-	/**/
+	
 	HANDLE hThreadArbitro;
 	HANDLE hThreadAdmitUsers;
 	
@@ -79,7 +198,46 @@ int _tmain(int argc, TCHAR* argv[]) {
 		_tprintf("Erro ao criar thread(AdmitUsers): %lu\n", GetLastError());
 		return 1;
 	}
-	
+	*/
+	// Preparar dados da thread 
+	TDATA td = { {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL},NULL,TRUE };
+	td.hMutex = CreateMutex(NULL, FALSE, NULL);
+	HANDLE hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
+
+	// Criar mutex
+	// CRiar thread
+	do {
+		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"),
+			PIPE_NAME);
+		hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_WAIT
+			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(buf), sizeof(buf),
+			3000, NULL);
+		if (hPipe == INVALID_HANDLE_VALUE) {
+			_tprintf_s(_T("[ERRO] Criar Named Pipe! (CreateNamedPipe)"));
+			exit(-1);
+		}
+
+		_tprintf_s(_T("[ESCRITOR] Esperar ligação de um leitor... (ConnectNamedPipe)\n"));
+		if (!ConnectNamedPipe(hPipe, NULL)) {
+			_tprintf_s(_T("[ERRO] Ligação ao leitor! (ConnectNamedPipe\n"));
+			exit(-1);
+		}
+
+
+		WaitForSingleObject(td.hMutex, INFINITE);
+		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+			if (td.hPipe[i] == NULL) {
+				td.hPipe[i] = hPipe;
+				break;
+			}
+		}
+		ReleaseMutex(td.hMutex);
+
+		//Criar theread cliente (hpipe
+		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)hPipe, 0, NULL);
+
+	} while (td.continua);
+
 
 	//TODO main loop do jogo
 	//while (currentUsers >= MINIMUM_GAME_PLAYERS)
@@ -88,17 +246,19 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 
 
+	WaitForSingleObject(hThreadDistribui, INFINITE);
+	CloseHandle(hThreadDistribui);
+	CloseHandle(td.hMutex);
 
 
 
-
-
+	/*
 	WaitForSingleObject(hThreadArbitro, INFINITE);
 	// Libertar memória
 	free(letras_jogo);
 	CloseHandle(hThreadArbitro);
 	CloseHandle(hThreadAdmitUsers);
-
+	*/
 
 	return 0;
 
