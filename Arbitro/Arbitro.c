@@ -19,12 +19,90 @@ typedef struct {
 	BOOL continua;
 }TDATA;
 
-
-
 // prototipos funções
 DWORD WINAPI processArbitroComands(LPVOID param);
 TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras);
 
+
+void consola_arbitro(TCHAR comando[]) {
+	TCHAR* comando_token;
+	TCHAR* token = _tcstok_s(comando, _T(" ,\n"), &comando_token);
+
+	if (token == NULL) {
+		_tprintf(_T("Comando inválido.\n"));
+		// envia isto 
+		return;
+	}
+
+	if (_tcscmp(token, _T("encerrar")) == 0) {
+		// termina a theard 
+		return;
+	}
+	else if (_tcscmp(token, _T("listar")) == 0) {
+		_tprintf(_T("listar\n"));
+	}
+	else if (_tcscmp(token, _T("excluir")) == 0) {
+		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
+		if (token == NULL) {
+			_tprintf(_T("Comando inválido.\n"));
+			// envia isto 
+			return;
+		}
+		_tprintf(_T("excluir %s \n"), token);
+
+	}
+	else if (_tcscmp(token, _T("iniciarbot")) == 0) {
+		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
+		if (token == NULL) {
+			_tprintf(_T("Comando inválido.\n"));
+			// envia isto 
+			return;
+		}
+		_tprintf(_T("inciarbot %s \n"), token);
+	}
+	else if (_tcscmp(token, _T("acelerar")) == 0) {
+		_tprintf(_T("acelerar\n"));
+	}
+	else if (_tcscmp(token, _T("travar")) == 0) {
+		_tprintf(_T("travar\n"));
+	}
+	else {
+		_tprintf(_T("Comando desconhecido: %s\n"), token);
+	}
+}
+
+void consola_jogoui(TCHAR comando[]) {
+	TCHAR* comando_token;
+	TCHAR* token = _tcstok_s(comando, _T(" ,\n"), &comando_token);
+
+	if (token == NULL) {
+		_tprintf(_T("Comando inválido.\n"));
+		// envia isto 
+		return;
+	}
+
+	if (_tcscmp(token, _T(":sair")) == 0) {
+		// termina a theard 
+		_tprintf(_T("sair\n"));
+		return;
+	}
+	else if (_tcscmp(token, _T(":pont")) == 0) {
+		_tprintf(_T(":pont\n"));
+	}
+	else if (_tcscmp(token, _T(":jogs")) == 0) {
+		_tprintf(_T(":jogs\n"));
+	}
+	else {
+		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
+		if (token == NULL) {
+			// quer dizer que é uma palavra
+			// envia isto 
+			// faz o quer for necessario
+			return;
+		}
+		_tprintf(_T("Demasiados argumentos \n"), token);
+	}
+}
 
 // nesta thread o arbitro vai receber os pedido neste caso as palavras ou os comandos 
 // e vai fazer fazer o que tem a fazer sobre os pontos e tudo mais 
@@ -55,9 +133,9 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 
 		_tprintf_s(_T("[ESCRITOR] Recebi '%s'(%d bytes) ...... (ReadFile)\n"), buf, n);
 			// PROCESSAMENTO
-		CharUpper(buf);
 		// TODO todo o processamento vai ser feito aqui
 		//ANTES DA OPERACAO 
+		consola_jogoui(buf);
 
 		// envia a resposta
 		ret = WriteFile(hPipe, buf, (DWORD)_tcslen(buf) * sizeof(TCHAR), &n, NULL);
@@ -75,7 +153,6 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 
 	ExitThread(0);
 }
-
 
 // Nesta thread tratamos os comandos do arbitro e enviamos o que seja necessario para todos os utilizadores
 DWORD WINAPI distribui(LPVOID data) {
@@ -129,8 +206,6 @@ DWORD WINAPI distribui(LPVOID data) {
 	CloseHandle(hEv);
 	ExitThread(0);
 }
-
-
 
 int _tmain(int argc, TCHAR* argv[]) {
 
@@ -232,8 +307,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 			}
 		}
 		ReleaseMutex(td.hMutex);
-
 		//Criar theread cliente (hpipe
+		
 		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)hPipe, 0, NULL);
 
 	} while (td.continua);
@@ -243,8 +318,6 @@ int _tmain(int argc, TCHAR* argv[]) {
 	//while (currentUsers >= MINIMUM_GAME_PLAYERS)
 	//{}
 	
-
-
 
 	WaitForSingleObject(hThreadDistribui, INFINITE);
 	CloseHandle(hThreadDistribui);
@@ -390,30 +463,4 @@ DWORD WINAPI admitUsers(LPVOID param) {
 }
 
 
-DWORD processUserComands(LPVOID param) {
-	_tprintf(_T("Thread processUserComands a correr!\n"));
-	int isLeaving = 0;
-	TCHAR command[250];
 
-	while (isLeaving) {
-	
-		//TODO ler comando do pipe
-
-		// comando sair
-		if (_tcsstr(command, _T("sair")) != NULL) {
-			isLeaving = 1;
-			_tprintf(_T("A sair do jogo...\n"));
-			break;
-		}
-
-		// comando pont => obter pontuação do próprio jogador
-		if (_tcsstr(command, _T("pont")) != NULL) {
-			//TODO lógica para obter a própria pontuação
-		}
-
-		// comando jogs => obter lista de jogadores
-		if (_tcsstr(command, _T("jogs")) != NULL) {
-			//TODO lógica para obter a lista dos jogadores
-		}
-	}
-}

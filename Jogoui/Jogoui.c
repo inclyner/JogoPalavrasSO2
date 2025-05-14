@@ -67,7 +67,6 @@ int _tmain(int argc, TCHAR* argv[]) {
             _tprintf(_T("[ERROR] Syntax: jogoui [username] \n"));
             exit(-1);
         }
-    
 
         _tprintf_s(_T("[ARBITRO] Esperar pelo pipe '%s' (WaitNamedPipe)\n"),
             PIPE_NAME);
