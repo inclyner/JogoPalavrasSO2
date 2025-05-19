@@ -8,12 +8,24 @@
 #include <stdio.h>
 
 #define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
+#define TAM 256
 
+typedef enum {
+    PALAVRA,
+    COMANDO,
+    USERNAME
+}MENSAGEM_TYPE;
+
+typedef struct {
+    TCHAR comando[TAM];
+    MENSAGEM_TYPE tipo;
+    DWORD user;
+} MENSAGEM;
 
 
 
 DWORD WINAPI recebMsg(LPVOID data) {
-    TCHAR buf[256];
+    MENSAGEM msg;
     HANDLE hPipe = (HANDLE)data;
     BOOL ret;
     DWORD n;
@@ -29,7 +41,7 @@ DWORD WINAPI recebMsg(LPVOID data) {
         ZeroMemory(&ov, sizeof(OVERLAPPED));
         ov.hEvent = hEv;
         //leitor assincrona com o &ov
-        ret = ReadFile(hPipe, buf, sizeof(buf), &n, &ov);
+        ret = ReadFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
         if (!ret && GetLastError() != ERROR_IO_PENDING) {
             _tprintf_s(_T("[ERROR] %d (%d bytes)... (ReadFile)\n"), ret, n);
             break;
@@ -38,9 +50,9 @@ DWORD WINAPI recebMsg(LPVOID data) {
             WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
             GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
         }
-        buf[n / sizeof(TCHAR)] = _T('\0');
+        //buf[n / sizeof(TCHAR)] = _T('\0');
 
-        _tprintf_s(_T("[LEITOR] Recebi %d bytes: '%s'... (ReadFile)\n"), n, buf);
+        _tprintf_s(_T("[LEITOR] Recebi %d bytes: '%s'... (ReadFile)\n"), n, msg.comando);
     } while (1);
     CloseHandle(hEv);
     ExitThread(0);
@@ -49,12 +61,12 @@ DWORD WINAPI recebMsg(LPVOID data) {
 
 
 int _tmain(int argc, TCHAR* argv[]) {
-    TCHAR buf[256];
     HANDLE hPipe;
     BOOL ret;
     DWORD n = 0;
     OVERLAPPED ov;
     HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+    MENSAGEM msg;
 
     #ifdef UNICODE
 	    _setmode(_fileno(stdin), _O_WTEXT);
@@ -86,9 +98,14 @@ int _tmain(int argc, TCHAR* argv[]) {
         ZeroMemory(&ov, sizeof(OVERLAPPED));
         ov.hEvent = hEv;
 
-        ret = WriteFile(hPipe, argv[1], (DWORD)_tcslen(argv[1]) * sizeof(TCHAR), &n, &ov); // muder ov
+        wcscpy_s(msg.comando,sizeof(msg.comando), argv[1]);
+        msg.tipo = USERNAME;
+       
+
+
+        ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov); // muder ov
         if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
-            _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), buf, n);
+            _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), msg.comando, n);
             exit(-1);
         }
         if (GetLastError() == ERROR_IO_PENDING) {
@@ -115,18 +132,18 @@ int _tmain(int argc, TCHAR* argv[]) {
             //scanf
             // 
             _tprintf_s(_T("[Leitor] Pedido: "));
-            _fgetts(buf, 256, stdin);
-            buf[_tcslen(buf) - 1] = _T('\0');
+            _fgetts(msg.comando, 256, stdin);
+            msg.comando[_tcslen(msg.comando) - 1] = _T('\0');
             
             //writefile
             // ANTES da operacao
             ZeroMemory(&ov, sizeof(OVERLAPPED));
             ov.hEvent = hEv;
-            _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), buf, n);
+            _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), msg.comando, n);
 
-            ret = WriteFile(hPipe, buf, (DWORD)_tcslen(buf) * sizeof(TCHAR), &n, &ov); // muder ov
+            ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov); // muder ov
             if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
-                _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), buf, n);
+                _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), msg.comando, n);
                 break;
             }
             if (GetLastError() == ERROR_IO_PENDING) {
@@ -134,7 +151,7 @@ int _tmain(int argc, TCHAR* argv[]) {
                 GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
             }
 
-            _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, buf);
+            _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, msg.comando);
 
 
         }
