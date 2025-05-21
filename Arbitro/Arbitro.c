@@ -1,36 +1,6 @@
 // Arbitro.c : This file contains the 'main' function. Program execution begins and ends there.
 //
-#include <windows.h>
-#include <tchar.h>
-#include <io.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <winreg.h>
-
-#define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
-#define TAM 256
-#define MAX_CONCURRENT_USERS 20
-#define MINIMUM_GAME_PLAYERS 2
-
-
-
-typedef struct {
-	HANDLE hPipe[MAX_CONCURRENT_USERS];
-	HANDLE hMutex;
-	BOOL continua;
-}TDATA;
-
-typedef enum {
-	PALAVRA,
-	COMANDO,
-	USERNAME
-}MENSAGEM_TYPE;
-
-typedef struct {
-	TCHAR comando[TAM];
-	MENSAGEM_TYPE tipo;
-	DWORD user;
-} MENSAGEM;
+#include "header.h"
 
 // prototipos funções
 DWORD WINAPI processArbitroComands(LPVOID param);
@@ -84,9 +54,39 @@ void consola_arbitro(MENSAGEM msg) {
 	}
 }
 
-void consola_jogoui(MENSAGEM msg) {
+MENSAGEM consola_jogoui(MENSAGEM msg, TDATA *ptd) {
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
+	MENSAGEM resposta;
+	TDATA td;
+	DWORD user_id = -1;
+	WaitForSingleObject(ptd->hMutex, INFINITE);
+	td = *ptd;
+	ReleaseMutex(ptd->hMutex);
+
+
+	switch (msg.tipo){
+	case USERNAME: 
+		user_id = isUserValid(msg, td);
+		resposta.user = user_id;
+		resposta.tipo = USERNAME;
+		_tcscpy_s(resposta.comando, TAM, _T("testes"));
+		_tprintf_s(_T("USER antes %d,\n"), user_id);
+		if (user_id != -1) {
+			_tprintf_s(_T("USER %d,\n"), user_id);
+
+			WaitForSingleObject(ptd->hMutex, INFINITE);
+			ptd->n_users++;
+			_tcscpy_s(ptd->users[user_id],TAM_USERNAME, msg.comando);
+			ReleaseMutex(ptd->hMutex);
+		}
+		_tprintf_s(_T("n_users %d, name = %s\n"), ptd->n_users, ptd->users[ptd->n_users - 1]);
+	default:
+
+		break;
+	}
+	return resposta;
+
 
 	if (token == NULL) {
 		_tprintf(_T("Comando inválido.\n"));
@@ -117,8 +117,18 @@ void consola_jogoui(MENSAGEM msg) {
 	}
 }
 
-BOOL isUserValid(MENSAGEM msg) {
+// return -1 = username invalido
+// return < 0 = username valido e id  
+DWORD isUserValid(MENSAGEM msg, TDATA td) {
+	DWORD i;
+	if (td.n_users == 0) return 0;
 
+	for (i = 0; i < td.n_users; i++) {
+		if (_tcsicmp(td.users[i], msg.comando) == 0) {
+			return -1;
+		}
+	}
+	return i;
 }
 
 
@@ -127,10 +137,11 @@ BOOL isUserValid(MENSAGEM msg) {
 // e depois envia por exemplo os pontos ao user ou que ele pediu nos comandos
 DWORD WINAPI atende_cliente(LPVOID data) {
 	TDATA* ptd = (TDATA*)data;
-	MENSAGEM msg;
+	MENSAGEM msg, resposta;
 	DWORD n;
 	BOOL ret, ativo = TRUE;
 	DWORD i, myPos;
+
 	WaitForSingleObject(ptd->hMutex, INFINITE);
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		if (ptd->hPipe[i] == NULL) {
@@ -171,10 +182,10 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		
 		
 
-		// consola_jogoui(msg);
+		resposta = consola_jogoui(msg,ptd);
 
 		// envia a resposta
-		ret = WriteFile(ptd->hPipe[myPos], &msg, sizeof(MENSAGEM), &n, NULL);
+		ret = WriteFile(ptd->hPipe[myPos], &resposta, sizeof(MENSAGEM), &n, NULL);
 		if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
 			_tprintf_s(_T("[ERROR] Write failed code(%d)\n"), GetLastError());
 			break;
@@ -183,7 +194,7 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
 			GetOverlappedResult(ptd->hPipe[myPos], &ov, &n, FALSE); // obter resultado da operacao
 		}
-		_tprintf_s(_T("[ARBITRO] Resposta '%s'(%d bytes) ... (WriteFile)\n"), msg.comando, n);
+		_tprintf_s(_T("[ARBITRO] Resposta '%s'(%d bytes) ... (WriteFile)\n"), resposta.comando, n);
 	} while (ativo);
 	CloseHandle(hEv);
 
@@ -249,6 +260,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 	DWORD i;
 	HANDLE hPipe;
 	TCHAR buf[256];
+	TDATA td;
+	BOOL isGameOn;
 
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -312,7 +325,15 @@ int _tmain(int argc, TCHAR* argv[]) {
 	}
 	*/
 	// Preparar dados da thread 
-	TDATA td = { {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL},NULL,TRUE };
+	td.n_users = 0;
+	td.isGameOn = FALSE;
+	td.continua = TRUE;
+	td.hMutex = NULL;
+	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+		td.hPipe[i] = NULL;
+		_tcscpy_s(td.users[i], sizeof(td.users[i]) / sizeof(TCHAR), _T("NO_USER"));
+		td.points[i] = 0;
+	}
 	td.hMutex = CreateMutex(NULL, FALSE, NULL);
 	HANDLE hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
 
@@ -335,7 +356,6 @@ int _tmain(int argc, TCHAR* argv[]) {
 			exit(-1);
 		}
 
-
 		WaitForSingleObject(td.hMutex, INFINITE);
 		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 			if (td.hPipe[i] == NULL) {
@@ -343,6 +363,18 @@ int _tmain(int argc, TCHAR* argv[]) {
 				break;
 			}
 		}
+
+		if (!td.isGameOn && td.n_users == 2) {
+			_tprintf_s(_T("\nStart Game\n"));
+			td.isGameOn == TRUE;
+		}
+
+		if (td.isGameOn && td.n_users == 1) {
+			_tprintf_s(_T("\nEnd GAME\n"));
+			td.isGameOn == FALSE;
+		}
+
+
 		ReleaseMutex(td.hMutex);
 		//Criar theread cliente (hpipe
 		

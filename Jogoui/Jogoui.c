@@ -13,13 +13,13 @@
 typedef enum {
     PALAVRA,
     COMANDO,
-    USERNAME
+    USERNAME,
+    PONTOS
 }MENSAGEM_TYPE;
 
 typedef struct {
     TCHAR comando[TAM];
     MENSAGEM_TYPE tipo;
-    DWORD user;
 } MENSAGEM;
 
 
@@ -27,7 +27,7 @@ typedef struct {
 DWORD WINAPI recebMsg(LPVOID data) {
     MENSAGEM msg;
     HANDLE hPipe = (HANDLE)data;
-    BOOL ret;
+    BOOL ret, isGameOn = TRUE;
     DWORD n;
 
 
@@ -50,10 +50,24 @@ DWORD WINAPI recebMsg(LPVOID data) {
             WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
             GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
         }
-        //buf[n / sizeof(TCHAR)] = _T('\0');
+        
+        switch (msg.tipo){
+        case USERNAME:
+            if (msg.user >= 0) {
+                _tprintf_s(_T("Username valido (%d)\n"),msg.user);
+            }
+            else {
+                _tprintf_s(_T("[ERROR] User invalido"));
+                isGameOn = FALSE;
+            }
+            
 
-        _tprintf_s(_T("[LEITOR] Recebi %d bytes: '%s'... (ReadFile)\n"), n, msg.comando);
-    } while (1);
+        default:
+            break;
+        }
+
+
+    } while (isGameOn);
     CloseHandle(hEv);
     ExitThread(0);
 }
@@ -113,7 +127,7 @@ int _tmain(int argc, TCHAR* argv[]) {
             GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
         }
 
-        _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, argv[1]);
+        _tprintf_s(_T("[JOGOUI] Tentar login (bytes %d) (%s)\n"), n, argv[1]);
 
 
 
@@ -128,7 +142,7 @@ int _tmain(int argc, TCHAR* argv[]) {
         HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
         //FORA CILCO...
         
-        while (1) {
+        do {
             //scanf
             // 
             _tprintf_s(_T("[Leitor] Pedido: "));
@@ -154,7 +168,7 @@ int _tmain(int argc, TCHAR* argv[]) {
             _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, msg.comando);
 
 
-        }
+        } while (_tcsicmp(msg.comando, _T("sair")));
         CloseHandle(hEv);
         CloseHandle(hPipe);
         CloseHandle(hThread);
