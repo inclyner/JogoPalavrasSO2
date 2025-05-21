@@ -136,7 +136,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 	return resposta;
 }
 
-MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd) {
+MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos) {
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
 	MENSAGEM resposta;
@@ -179,6 +179,17 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd) {
 		break;
 	case COMANDO:
 		_tprintf_s(_T(" comando %s\n"), msg.comando);
+		if (_tcsicmp(msg.comando, _T(":pont")) == 0) {
+			_stprintf_s(resposta.comando, TAM, _T("Pontos: %d\n"),td.players[myPos].points); 
+			_tprintf_s(_T("pontos %d\n"), td.players[myPos].points);
+		}
+		else if(_tcsicmp(msg.comando, _T(":jogs")) == 0){
+
+		}
+		else {
+			// sair
+		}
+			
 		resposta.tipo = COMANDO;
 
 		break;
@@ -326,7 +337,7 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		
 		
 
-		resposta = consola_jogoui(msg,ptd);
+		resposta = consola_jogoui(msg,ptd,myPos);
 		
 		// envia a resposta
 		ret = WriteFile(ptd->players[myPos].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
@@ -343,7 +354,7 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		_tprintf_s(_T("[ARBITRO] Resposta '%s'(%d bytes) ... (WriteFile)\n"), resposta.comando, n);
 
 
-		if (FALSE) {
+		if (FALSE) { // vai servir para enviar coisas a todos os users 
 			WaitForSingleObject(ptd->hMutex, INFINITE);
 			td = *ptd;
 			ReleaseMutex(ptd->hMutex);
