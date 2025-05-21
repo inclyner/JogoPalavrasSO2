@@ -7,9 +7,18 @@ DWORD WINAPI processArbitroComands(LPVOID param);
 TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras);
 
 
-void consola_arbitro(MENSAGEM msg) {
+MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
+	TDATA td;
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
+	MENSAGEM resposta;
+	resposta.tipo = ERRO;
+	DWORD i;
+
+	WaitForSingleObject(ptd->hMutex, INFINITE);
+	td = *ptd;
+	ReleaseMutex(ptd->hMutex);
+
 
 	if (token == NULL) {
 		_tprintf(_T("Comando inválido.\n"));
@@ -22,7 +31,12 @@ void consola_arbitro(MENSAGEM msg) {
 		return;
 	}
 	else if (_tcscmp(token, _T("listar")) == 0) {
-		_tprintf(_T("listar\n"));
+		_tprintf(_T("Lista de jogadores \n"));
+		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+			if (td.players[i].hPipe != NULL) {
+				_tprintf(_T("Nome: %s \t | Pontos: %d\n"), td.players[i].name, td.players[i].points);
+			}
+		}
 	}
 	else if (_tcscmp(token, _T("excluir")) == 0) {
 		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
@@ -52,9 +66,11 @@ void consola_arbitro(MENSAGEM msg) {
 	else {
 		_tprintf(_T("Comando desconhecido: %s\n"), token);
 	}
+
+	return resposta;
 }
 
-MENSAGEM consola_jogoui(MENSAGEM msg, TDATA *ptd) {
+MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd) {
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
 	MENSAGEM resposta;
@@ -63,72 +79,59 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA *ptd) {
 	WaitForSingleObject(ptd->hMutex, INFINITE);
 	td = *ptd;
 	ReleaseMutex(ptd->hMutex);
+	_tcscpy_s(resposta.comando, TAM, msg.comando);
+	resposta.tipo = ERRO;
 
+	switch (msg.tipo) {
+	case USERNAME:
+		_tprintf_s(_T("O jogador %s está a tentar entrar no jogo.\n"), msg.comando);
 
-	switch (msg.tipo){
-	case USERNAME: 
-		user_id = isUserValid(msg, td);
-		resposta.user = user_id;
-		resposta.tipo = USERNAME;
-		_tcscpy_s(resposta.comando, TAM, _T("testes"));
-		_tprintf_s(_T("USER antes %d,\n"), user_id);
-		if (user_id != -1) {
-			_tprintf_s(_T("USER %d,\n"), user_id);
-
+		if (isUserValid(msg, td)) {
+			resposta.tipo = USERNAME;
 			WaitForSingleObject(ptd->hMutex, INFINITE);
+			_tprintf_s(_T("next_id %d\n"), ptd->next_id);
+			_stprintf_s(resposta.comando, TAM, _T("%d"), ptd->next_id); // STR ---> 
+			_tcscpy_s(ptd->players[ptd->next_id].name, TAM_USERNAME, msg.comando);
+			_tprintf_s(_T("n_users %d, name = %s\n"), ptd->n_users, ptd->players[ptd->next_id].name);
 			ptd->n_users++;
-			_tcscpy_s(ptd->users[user_id],TAM_USERNAME, msg.comando);
+			if (ptd->next_id + 1 == ptd->n_users) {
+				ptd->next_id++;
+			}
+			else {
+				ptd->next_id = ptd->n_users;
+			}
 			ReleaseMutex(ptd->hMutex);
 		}
-		_tprintf_s(_T("n_users %d, name = %s\n"), ptd->n_users, ptd->users[ptd->n_users - 1]);
+		else {
+			_stprintf_s(resposta.comando, TAM, _T("%d"), -1);
+		}
+		
+		break;
+	case PALAVRA:
+		resposta.tipo = PALAVRA;
+		_tprintf_s(_T(" palavra %s\n"), msg.comando);
+		break;
+	case COMANDO:
+		_tprintf_s(_T(" comando %s\n"), msg.comando);
+		resposta.tipo = COMANDO;
+		break;
 	default:
-
+		_tprintf_s(_T("DEFAULT\n"));
 		break;
 	}
 	return resposta;
-
-
-	if (token == NULL) {
-		_tprintf(_T("Comando inválido.\n"));
-		// envia isto 
-		return;
-	}
-
-	if (_tcscmp(token, _T(":sair")) == 0) {
-		// termina a theard 
-		_tprintf(_T("sair\n"));
-		return;
-	}
-	else if (_tcscmp(token, _T(":pont")) == 0) {
-		_tprintf(_T(":pont\n"));
-	}
-	else if (_tcscmp(token, _T(":jogs")) == 0) {
-		_tprintf(_T(":jogs\n"));
-	}
-	else {
-		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
-		if (token == NULL) {
-			// quer dizer que é uma palavra
-			// envia isto 
-			// faz o quer for necessario
-			return;
-		}
-		_tprintf(_T("Demasiados argumentos \n"), token);
-	}
 }
 
-// return -1 = username invalido
-// return < 0 = username valido e id  
-DWORD isUserValid(MENSAGEM msg, TDATA td) {
+BOOL isUserValid(MENSAGEM msg, TDATA td) {
 	DWORD i;
-	if (td.n_users == 0) return 0;
+	if (td.n_users == 0) return TRUE;
 
 	for (i = 0; i < td.n_users; i++) {
-		if (_tcsicmp(td.users[i], msg.comando) == 0) {
-			return -1;
+		if (_tcsicmp(td.players[i].name, msg.comando) == 0) {
+			return FALSE;
 		}
 	}
-	return i;
+	return TRUE;
 }
 
 
@@ -141,19 +144,10 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 	DWORD n;
 	BOOL ret, ativo = TRUE;
 	DWORD i, myPos;
+	TDATA td;
 
 	WaitForSingleObject(ptd->hMutex, INFINITE);
-	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-		if (ptd->hPipe[i] == NULL) {
-			if(i == 0){
-				myPos = i;
-			}
-			else {
-				myPos = i - 1;
-			}
-			break;
-		}
-	}
+	myPos = ptd->next_id;
 	ReleaseMutex(ptd->hMutex);
 
 
@@ -164,14 +158,14 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		ZeroMemory(&ov, sizeof(OVERLAPPED));
 		ov.hEvent = hEv;
 		//ANTEs da operaçao 
-		ret = ReadFile(ptd->hPipe[myPos], &msg, sizeof(MENSAGEM), &n, &ov);
+		ret = ReadFile(ptd->players[myPos].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
 		if (!ret && GetLastError() != ERROR_IO_PENDING) {
 			_tprintf_s(_T("[ERROR READ] %d (%d bytes)... (ReadFile)\n"), ret, n);
 			break;
 		}
 		if (GetLastError() == ERROR_IO_PENDING) {
 			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-			GetOverlappedResult(ptd->hPipe[myPos], &ov, &n, FALSE); // obter resultado da operacao
+			GetOverlappedResult(ptd->players[myPos].hPipe, &ov, &n, FALSE); // obter resultado da operacao
 		}
 		// buf[n / sizeof(TCHAR)] = _T('\0');
 
@@ -183,21 +177,64 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		
 
 		resposta = consola_jogoui(msg,ptd);
-
+		
 		// envia a resposta
-		ret = WriteFile(ptd->hPipe[myPos], &resposta, sizeof(MENSAGEM), &n, NULL);
+		ret = WriteFile(ptd->players[myPos].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
 		if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
 			_tprintf_s(_T("[ERROR] Write failed code(%d)\n"), GetLastError());
 			break;
 		}
 		if (GetLastError() == ERROR_IO_PENDING) {
 			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-			GetOverlappedResult(ptd->hPipe[myPos], &ov, &n, FALSE); // obter resultado da operacao
+			GetOverlappedResult(ptd->players[myPos].hPipe, &ov, &n, FALSE); // obter resultado da operacao
 		}
+
+
 		_tprintf_s(_T("[ARBITRO] Resposta '%s'(%d bytes) ... (WriteFile)\n"), resposta.comando, n);
+
+
+		if (FALSE) {
+			WaitForSingleObject(ptd->hMutex, INFINITE);
+			td = *ptd;
+			ReleaseMutex(ptd->hMutex);
+
+			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+				if (ptd->players[i].hPipe != NULL) {
+					//ANTES Da operacao 
+					ZeroMemory(&ov, sizeof(OVERLAPPED));
+					ov.hEvent = hEv;
+					ret = WriteFile(ptd->players[i].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+					if (!ret && GetLastError() != ERROR_IO_PENDING) {
+						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
+						break;
+					}
+					if (GetLastError() == ERROR_IO_PENDING) {
+						WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+						GetOverlappedResult(ptd->players[i].hPipe, &ov, &n, FALSE); // obter resultado da operacao
+					}
+				}
+				_tprintf_s(_T("[ARBITRO ALL] Enviei %d bytes ao leitor...  (i = %d) (WriteFile)\n"), n, i);
+			}
+		}
+
+		if (_tcsicmp(msg.comando, _T(":sair")) == 0) {
+			
+			DisconnectNamedPipe(ptd->players[myPos].hPipe);
+			CloseHandle(ptd->players[myPos].hPipe);
+			WaitForSingleObject(ptd->hMutex, INFINITE);
+			_tprintf_s(_T("[ARBITRO] O jogador (id=%d) %s vai sair.\n"),myPos , ptd->players[myPos].name);
+			ptd->players[myPos].hPipe = NULL;
+			_tcscpy_s(ptd->players[myPos].name, TAM, _T(""));
+			ptd->n_users--;
+			ptd->next_id = myPos;
+
+			ReleaseMutex(ptd->hMutex);
+			ativo = FALSE;
+			continue;
+		}
 	} while (ativo);
 	CloseHandle(hEv);
-
+	_tprintf_s(_T("Theread atende a sair\n"));
 	ExitThread(0);
 }
 
@@ -208,7 +245,7 @@ DWORD WINAPI distribui(LPVOID data) {
 	DWORD n, i;
 	TDATA td;
 	BOOL ret;
-	MENSAGEM msg;
+	MENSAGEM msg, resposta;
 	// FOra do cliclo 
 	OVERLAPPED ov;
 	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -221,34 +258,40 @@ DWORD WINAPI distribui(LPVOID data) {
 		td = *ptd;
 		ReleaseMutex(ptd->hMutex);
 
-		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-			if (td.hPipe[i] != NULL) {
-				//ANTES Da operacao 
-				ZeroMemory(&ov, sizeof(OVERLAPPED));
-				ov.hEvent = hEv;
-				ret = WriteFile(td.hPipe[i], &msg, sizeof(MENSAGEM), &n, &ov);
-				if (!ret && GetLastError() != ERROR_IO_PENDING) {
-					_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
-					break;
+		resposta = consola_arbitro(msg, ptd);
+
+		if (resposta.tipo < ERRO) {
+			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+				if (ptd->players[i].hPipe != NULL) {
+					//ANTES Da operacao 
+					ZeroMemory(&ov, sizeof(OVERLAPPED));
+					ov.hEvent = hEv;
+					ret = WriteFile(ptd->players[i].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+					if (!ret && GetLastError() != ERROR_IO_PENDING) {
+						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
+						break;
+					}
+					if (GetLastError() == ERROR_IO_PENDING) {
+						WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+						GetOverlappedResult(ptd->players[i].hPipe, &ov, &n, FALSE); // obter resultado da operacao
+					}
 				}
-				if (GetLastError() == ERROR_IO_PENDING) {
-					WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-					GetOverlappedResult(td.hPipe[i], &ov, &n, FALSE); // obter resultado da operacao
-				}
+				_tprintf_s(_T("[ESCRITOR] Enviei %d bytes ao leitor...  (i = %d) (WriteFile)\n"), n, i);
 			}
-			_tprintf_s(_T("[ESCRITOR] Enviei %d bytes ao leitor...  (i = %d) (WriteFile)\n"), n, i);
 		}
+
+
 	} while (_tcsicmp(buf, _T("fim")));
 
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-		if (td.hPipe[i] != NULL) {
-			FlushFileBuffers(td.hPipe[i]);
+		if (ptd->players[i].hPipe != NULL) {
+			FlushFileBuffers(ptd->players[i].hPipe);
 			_tprintf_s(_T("[ESCRITOR] Desligar o pipe (DisconnectNamedPipe)\n"));
-			if (!DisconnectNamedPipe(td.hPipe[i])) {
+			if (!DisconnectNamedPipe(ptd->players[i].hPipe)) {
 				_tprintf_s(_T("[ERRO] Desligar o pipe! (DisconnectNamedPipe)"));
 				exit(-1);
 			}
-			CloseHandle(td.hPipe[i]);
+			CloseHandle(ptd->players[i].hPipe);
 		}
 	}
 	CloseHandle(hEv);
@@ -325,14 +368,15 @@ int _tmain(int argc, TCHAR* argv[]) {
 	}
 	*/
 	// Preparar dados da thread 
+	td.next_id = 0;
 	td.n_users = 0;
 	td.isGameOn = FALSE;
 	td.continua = TRUE;
 	td.hMutex = NULL;
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-		td.hPipe[i] = NULL;
-		_tcscpy_s(td.users[i], sizeof(td.users[i]) / sizeof(TCHAR), _T("NO_USER"));
-		td.points[i] = 0;
+		td.players[i].hPipe = NULL;
+		_tcscpy_s(td.players[i].name, TAM_USERNAME, _T("NO_USER"));
+		td.players[i].points = 0;
 	}
 	td.hMutex = CreateMutex(NULL, FALSE, NULL);
 	HANDLE hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
@@ -343,7 +387,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"),
 			PIPE_NAME);
 		hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_WAIT
-			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(buf), sizeof(buf),
+			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(MENSAGEM), sizeof(MENSAGEM),
 			3000, NULL);
 		if (hPipe == INVALID_HANDLE_VALUE) {
 			_tprintf_s(_T("[ERRO] Criar Named Pipe! (CreateNamedPipe)"));
@@ -358,8 +402,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 		WaitForSingleObject(td.hMutex, INFINITE);
 		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-			if (td.hPipe[i] == NULL) {
-				td.hPipe[i] = hPipe;
+			if (td.players[i].hPipe == NULL) {
+				td.players[i].hPipe = hPipe;
 				break;
 			}
 		}

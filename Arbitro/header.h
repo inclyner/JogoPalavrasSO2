@@ -12,17 +12,22 @@
 #define MINIMUM_GAME_PLAYERS 2
 
 
+typedef struct {
+	HANDLE hPipe;
+	TCHAR name[TAM_USERNAME];
+	DWORD points;
+} PLAYERS;
 
 typedef struct {
-	HANDLE hPipe[MAX_CONCURRENT_USERS];
-	TCHAR users[MAX_CONCURRENT_USERS][TAM_USERNAME];
-	DWORD points[MAX_CONCURRENT_USERS];
+	PLAYERS players[MAX_CONCURRENT_USERS];
 	HANDLE hMutex;
 	BOOL continua, isGameOn;
 	DWORD n_users;
+	DWORD next_id;
 }TDATA;
 
 typedef enum {
+	ERRO = -1,
 	PALAVRA,
 	COMANDO,
 	USERNAME
@@ -31,5 +36,4 @@ typedef enum {
 typedef struct {
 	TCHAR comando[TAM];
 	MENSAGEM_TYPE tipo;
-	DWORD user;
 } MENSAGEM;
