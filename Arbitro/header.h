@@ -6,6 +6,7 @@
 #include <winreg.h>
 
 #define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
+#define MEMORY_NAME _T("SHARED_MEMORY")
 #define TAM 256
 #define TAM_USERNAME 50
 #define MAX_CONCURRENT_USERS 20
@@ -24,6 +25,9 @@ typedef struct {
 	BOOL continua, isGameOn;
 	DWORD n_users;
 	DWORD next_id;
+	DWORD ritmo;
+	DWORD max_letras;
+	DWORD id_letra;
 }TDATA;
 
 typedef enum {

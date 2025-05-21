@@ -130,6 +130,7 @@
     <ClCompile Include="Arbitro.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Arbitro.h" />
     <ClInclude Include="header.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

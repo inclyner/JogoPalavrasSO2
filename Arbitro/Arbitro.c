@@ -1,10 +1,56 @@
 // Arbitro.c : This file contains the 'main' function. Program execution begins and ends there.
 //
 #include "header.h"
+#include "Arbitro.h"
 
 // prototipos funções
 DWORD WINAPI processArbitroComands(LPVOID param);
 TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras);
+
+TCHAR letraRandom() {
+	return _T('A') + (rand() % 26);
+}
+
+void acelerarRitmo(TDATA* ptd) {
+	WaitForSingleObject(ptd->hMutex, INFINITE);
+	ptd->ritmo--;
+	ReleaseMutex(ptd->hMutex);
+	_tprintf_s(_T("[ARBITRO] Novo ritmo: %d.\n"),ptd->ritmo);
+
+}
+
+void travarRitmo(TDATA* ptd) {
+	WaitForSingleObject(ptd->hMutex, INFINITE);
+	ptd->ritmo++;
+	ReleaseMutex(ptd->hMutex);
+	_tprintf_s(_T("[ARBITRO] Novo ritmo: %d.\n"), ptd->ritmo);
+}
+
+DWORD getPlayerByName(TDATA td,TCHAR token[]) {
+	DWORD i;
+	
+
+	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+		if (_tcsicmp(td.players[i].name, token) == 0) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+void EliminarPlayer(TDATA* ptd, DWORD id)
+{
+	DisconnectNamedPipe(ptd->players[id].hPipe);
+	CloseHandle(ptd->players[id].hPipe);
+	WaitForSingleObject(ptd->hMutex, INFINITE);
+	_tprintf_s(_T("[ARBITRO] O jogador (id=%d) %s vai sair.\n"), id, ptd->players[id].name);
+	ptd->players[id].hPipe = NULL;
+	_tcscpy_s(ptd->players[id].name, TAM, _T(""));
+	ptd->n_users--;
+	ptd->next_id = id;
+	ReleaseMutex(ptd->hMutex);
+}
 
 
 MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
@@ -13,7 +59,8 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
 	MENSAGEM resposta;
 	resposta.tipo = ERRO;
-	DWORD i;
+	_stprintf_s(resposta.comando, TAM, _T(""));
+	DWORD i, id;
 
 	WaitForSingleObject(ptd->hMutex, INFINITE);
 	td = *ptd;
@@ -23,8 +70,9 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 	if (token == NULL) {
 		_tprintf(_T("Comando inválido.\n"));
 		// envia isto 
-		return;
+		return resposta;
 	}
+	resposta.tipo = COMANDO;
 
 	if (_tcscmp(token, _T("encerrar")) == 0) {
 		// termina a theard 
@@ -42,29 +90,47 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
 		if (token == NULL) {
 			_tprintf(_T("Comando inválido.\n"));
-			// envia isto 
-			return;
 		}
-		_tprintf(_T("excluir %s \n"), token);
-
+		else {
+			_tprintf(_T("excluir %s \n"), token);
+			id = getPlayerByName(td, token);
+			if (id != -1) {
+				_tprintf(_T("TODO excluir username\n"));
+				WaitForSingleObject(ptd->hMutex, INFINITE);
+				//EliminarPlayer(ptd, id);
+				ReleaseMutex(ptd->hMutex);
+				//_tcscpy_s(resposta.comando, TAM, _T(":sair"));
+			} else {
+				_tprintf(_T("Username não existe.\n"));
+			}
+		}
 	}
 	else if (_tcscmp(token, _T("iniciarbot")) == 0) {
 		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
 		if (token == NULL) {
 			_tprintf(_T("Comando inválido.\n"));
-			// envia isto 
-			return;
 		}
-		_tprintf(_T("inciarbot %s \n"), token);
+		else {
+			_tprintf(_T("inciarbot %s \n"), token);
+
+		}
 	}
 	else if (_tcscmp(token, _T("acelerar")) == 0) {
-		_tprintf(_T("acelerar\n"));
+		if (td.ritmo > 1) {
+			acelerarRitmo(ptd);
+			_stprintf_s(resposta.comando, TAM, _T("[ARBITRO] Ritmo foi aumentado para %d segundos."), ptd->ritmo);
+		}
+		else {
+			_tprintf(_T("O Ritmo já se encontra no minimo (1).\n"));
+		}
 	}
 	else if (_tcscmp(token, _T("travar")) == 0) {
-		_tprintf(_T("travar\n"));
+		travarRitmo(ptd);
+		_stprintf_s(resposta.comando, TAM, _T("[ARBITRO] Ritmo foi reduzido para %d segundos."), ptd->ritmo);
 	}
 	else {
 		_tprintf(_T("Comando desconhecido: %s\n"), token);
+		resposta.tipo = ERRO;
 	}
 
 	return resposta;
@@ -114,6 +180,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd) {
 	case COMANDO:
 		_tprintf_s(_T(" comando %s\n"), msg.comando);
 		resposta.tipo = COMANDO;
+
 		break;
 	default:
 		_tprintf_s(_T("DEFAULT\n"));
@@ -132,6 +199,89 @@ BOOL isUserValid(MENSAGEM msg, TDATA td) {
 		}
 	}
 	return TRUE;
+}
+
+
+DWORD WINAPI letras(LPVOID data) {
+	TDATA* ptd = (TDATA*)data;
+	TDATA td;
+	DWORD i;
+	HANDLE hMapFile;
+	LPTSTR pBuf;
+	TCHAR letra;
+	DWORD pos;
+	BOOL livre;
+
+	hMapFile = OpenFileMapping(
+		FILE_MAP_ALL_ACCESS,
+		FALSE,
+		MEMORY_NAME
+	);
+
+	if (hMapFile == NULL) {
+		_tprintf(TEXT("Erro ao abrir memória partilhada (%d).\n"), GetLastError());
+		return 1;
+	}
+
+	pBuf = (LPTSTR)MapViewOfFile(
+		hMapFile,
+		FILE_MAP_ALL_ACCESS,
+		0, 0,
+		6 * sizeof(TCHAR)
+	);
+
+	if (pBuf == NULL) {
+		_tprintf(TEXT("Erro ao mapear memória (%d).\n"), GetLastError());
+		CloseHandle(hMapFile);
+		return 1;
+	}
+
+
+	WaitForSingleObject(ptd->hMutex, INFINITE);
+	td = *ptd;
+	ReleaseMutex(ptd->hMutex);
+
+
+	do{
+		pos = -1;
+		livre = TRUE;
+		_tprintf_s(_T("letras:\t"));
+		for (i = 0; i < td.max_letras; i++) {
+			_tprintf_s(_T("  %c\t"), pBuf[i]);
+			if (livre) {
+				if (pBuf[i] == _T('_')) {
+					pos = i;
+					livre = FALSE;
+				}
+			}
+		}
+		_tprintf_s(_T("\n"));
+		Sleep(td.ritmo * 1000);
+		letra = letraRandom();
+		_tprintf(_T("Erro ao mapear memória (%c) %d.\n"), letra, pos);
+		
+		if (pos != -1) {
+			pBuf[pos] = letra;
+			td.id_letra = pos;
+		}
+		else {
+			if (td.id_letra >= td.max_letras - 1) {
+				td.id_letra = 0;
+			}
+			else {
+				td.id_letra++;
+			}
+			pBuf[td.id_letra] = letra;
+		}
+		
+
+		WaitForSingleObject(ptd->hMutex, INFINITE);
+		
+		ReleaseMutex(ptd->hMutex);
+
+	} while (TRUE);
+
+
 }
 
 
@@ -218,17 +368,7 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		}
 
 		if (_tcsicmp(msg.comando, _T(":sair")) == 0) {
-			
-			DisconnectNamedPipe(ptd->players[myPos].hPipe);
-			CloseHandle(ptd->players[myPos].hPipe);
-			WaitForSingleObject(ptd->hMutex, INFINITE);
-			_tprintf_s(_T("[ARBITRO] O jogador (id=%d) %s vai sair.\n"),myPos , ptd->players[myPos].name);
-			ptd->players[myPos].hPipe = NULL;
-			_tcscpy_s(ptd->players[myPos].name, TAM, _T(""));
-			ptd->n_users--;
-			ptd->next_id = myPos;
-
-			ReleaseMutex(ptd->hMutex);
+			EliminarPlayer(ptd, myPos);
 			ativo = FALSE;
 			continue;
 		}
@@ -260,13 +400,13 @@ DWORD WINAPI distribui(LPVOID data) {
 
 		resposta = consola_arbitro(msg, ptd);
 
-		if (resposta.tipo < ERRO) {
+		if (resposta.tipo > ERRO) {
 			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 				if (ptd->players[i].hPipe != NULL) {
 					//ANTES Da operacao 
 					ZeroMemory(&ov, sizeof(OVERLAPPED));
 					ov.hEvent = hEv;
-					ret = WriteFile(ptd->players[i].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+					ret = WriteFile(ptd->players[i].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
 					if (!ret && GetLastError() != ERROR_IO_PENDING) {
 						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
 						break;
@@ -275,8 +415,9 @@ DWORD WINAPI distribui(LPVOID data) {
 						WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
 						GetOverlappedResult(ptd->players[i].hPipe, &ov, &n, FALSE); // obter resultado da operacao
 					}
+					_tprintf_s(_T("[ESCRITOR] Enviei %s bytes ao jogoui...  (i = %d) (WriteFile)\n"), resposta.comando, i);
+
 				}
-				_tprintf_s(_T("[ESCRITOR] Enviei %d bytes ao leitor...  (i = %d) (WriteFile)\n"), n, i);
 			}
 		}
 
@@ -305,15 +446,16 @@ int _tmain(int argc, TCHAR* argv[]) {
 	TCHAR buf[256];
 	TDATA td;
 	BOOL isGameOn;
+	HANDLE hMemoPart;
 
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
 	_setmode(_fileno(stdout), _O_WTEXT);
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
+	srand((unsigned int)time(NULL));
 
-
-	int max_letras, ritmo;
+	DWORD max_letras, ritmo;
 	getRegistryValues(&max_letras, &ritmo);
 
 	TCHAR* letras_jogo = (TCHAR*)malloc(max_letras * sizeof(TCHAR));
@@ -332,6 +474,33 @@ int _tmain(int argc, TCHAR* argv[]) {
 	for (int i = 0; i < max_letras; i++) {
 		letras_jogo[i] = _T('_');
 	}
+
+	hMemoPart = CreateFileMapping(
+		INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,       
+		0, max_letras * sizeof(TCHAR), MEMORY_NAME
+	);
+
+	if (hMemoPart == NULL) {
+		_tprintf(_T("Erro ao criar a memória partilhada (%d).\n"), GetLastError());
+		return 1;
+	}
+
+	LPTSTR memoBuf = MapViewOfFile(
+		hMemoPart,            
+		FILE_MAP_ALL_ACCESS,0, 0,              
+		max_letras * sizeof(TCHAR)
+	);
+
+	if (memoBuf == NULL) {
+		_tprintf(_T("Erro ao mapear (%d).\n"), GetLastError());
+		CloseHandle(memoBuf);
+		return 1;
+	}
+
+	for (int i = 0; i < max_letras; ++i) {
+		memoBuf[i] = _T('_');
+	}
+
 
 	/*
 	DWORD adminThreadId;
@@ -368,11 +537,14 @@ int _tmain(int argc, TCHAR* argv[]) {
 	}
 	*/
 	// Preparar dados da thread 
+	td.ritmo = ritmo;
 	td.next_id = 0;
 	td.n_users = 0;
 	td.isGameOn = FALSE;
 	td.continua = TRUE;
 	td.hMutex = NULL;
+	td.max_letras = max_letras;
+	td.id_letra = 0;
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		td.players[i].hPipe = NULL;
 		_tcscpy_s(td.players[i].name, TAM_USERNAME, _T("NO_USER"));
@@ -380,7 +552,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	}
 	td.hMutex = CreateMutex(NULL, FALSE, NULL);
 	HANDLE hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
-
+	HANDLE hThreadLetras = CreateThread(NULL, 0, letras, (LPVOID)&td, 0, NULL);
 	// Criar mutex
 	// CRiar thread
 	do {
@@ -435,6 +607,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 	WaitForSingleObject(hThreadDistribui, INFINITE);
 	CloseHandle(hThreadDistribui);
 	CloseHandle(td.hMutex);
+	UnmapViewOfFile(memoBuf);
+	CloseHandle(hMemoPart);
 
 
 
