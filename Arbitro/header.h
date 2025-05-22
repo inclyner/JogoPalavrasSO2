@@ -11,16 +11,19 @@
 #define TAM_USERNAME 50
 #define MAX_CONCURRENT_USERS 20
 #define MINIMUM_GAME_PLAYERS 2
+#define MAX_LETRAS 12
+#define DEFAULT_LETRAS 6
+#define DEFAULT_RITMO 3
 
 
 typedef struct {
 	HANDLE hPipe;
 	TCHAR name[TAM_USERNAME];
 	DWORD points;
-} PLAYERS;
+} PLAYER;
 
 typedef struct {
-	PLAYERS players[MAX_CONCURRENT_USERS];
+	PLAYER players[MAX_CONCURRENT_USERS];
 	HANDLE hMutex;
 	BOOL continua, isGameOn;
 	DWORD n_users;
@@ -28,7 +31,21 @@ typedef struct {
 	DWORD ritmo;
 	DWORD max_letras;
 	DWORD id_letra;
+	HANDLE hThreadLetras;
 }TDATA;
+
+typedef struct {
+	TCHAR name[TAM_USERNAME];
+	DWORD points;
+}PLAYER_MP;
+typedef struct {
+	DWORD num_letras;
+	TCHAR letras[MAX_LETRAS];
+	PLAYER_MP players[MAX_CONCURRENT_USERS];
+	TCHAR ultima_palavra[MAX_LETRAS];
+}MEMORIA_PARTILHADA;
+
+
 
 typedef enum {
 	ERRO = -1,
