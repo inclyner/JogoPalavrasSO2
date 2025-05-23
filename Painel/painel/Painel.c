@@ -4,6 +4,7 @@
 #include "resource.h"
 
 #define TAM 100
+#define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
 
 typedef struct {
     DWORD max_jogadores;
@@ -51,6 +52,33 @@ LRESULT CALLBACK trataDlg(HWND hDlg, UINT messg, WPARAM wParam, LPARAM lParam) {
 }
 
 
+HANDLE esperarPipeServidor(int maxTentativas, int intervaloMs) {
+    HANDLE hPipe;
+    int tentativas = 0;
+
+    do {
+        hPipe = CreateFile(
+            PIPE_NAME,
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            NULL,
+            OPEN_EXISTING,
+            0,
+            NULL);
+
+        if (hPipe != INVALID_HANDLE_VALUE) {
+            return hPipe; // Pipe encontrado
+        }
+
+        _tprintf(_T("A aguardar o árbitro... (%d/%d)\n"), tentativas + 1, maxTentativas);
+        Sleep(intervaloMs);
+        tentativas++;
+
+    } while (tentativas < maxTentativas);
+
+    return NULL; // Pipe não encontrado
+}
+
 int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPTSTR lpCmdLine, int nCmdShow) {
     HWND hWnd;
     MSG lpMsg;
@@ -69,7 +97,13 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPTSTR lpCmdLine, int
     wcApp.cbWndExtra = sizeof(TDATA *);
     wcApp.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
 
+    //verifica a existencia do pipe (verifica se o arbitro está a correr)
+    HANDLE hPipe = esperarPipeServidor(10, 1000); // tenta 10 vezes, com 1s entre cada
 
+    if (hPipe == NULL) {
+        _tprintf(_T("[ERRO] Não foi possível ligar ao árbitro.\n"));
+        exit(EXIT_FAILURE);
+    }
 
     if (!RegisterClassEx(&wcApp))
         return(0);

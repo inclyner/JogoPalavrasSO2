@@ -109,6 +109,34 @@ MENSAGEM consola_jogoui(MENSAGEM msg) {
     return resposta;
 }
 
+HANDLE esperarPipeServidor(int maxTentativas, int intervaloMs) {
+    HANDLE hPipe;
+    int tentativas = 0;
+
+    do {
+        hPipe = CreateFile(
+            PIPE_NAME,
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            NULL,
+            OPEN_EXISTING,
+            0,
+            NULL);
+
+        if (hPipe != INVALID_HANDLE_VALUE) {
+            return hPipe; // Pipe encontrado
+        }
+
+        _tprintf(_T("A aguardar o árbitro... (%d/%d)\n"), tentativas + 1, maxTentativas);
+        Sleep(intervaloMs);
+        tentativas++;
+
+    } while (tentativas < maxTentativas);
+
+    return NULL; // Pipe não encontrado
+}
+
+
 
 
 int _tmain(int argc, TCHAR* argv[]) {
@@ -126,176 +154,114 @@ int _tmain(int argc, TCHAR* argv[]) {
 
     #endif
         
-        if (argc != 2) {
-            _tprintf(_T("[ERROR] Syntax: jogoui [username] \n"));
-            exit(-1);
-        }
+    //verifica a existencia do pipe (verifica se o arbitro está a correr)
+    HANDLE hPipe = esperarPipeServidor(10, 1000); // tenta 10 vezes, com 1s entre cada
 
-        _tprintf_s(_T("[ARBITRO] Esperar pelo pipe '%s' (WaitNamedPipe)\n"),
-            PIPE_NAME);
-        if (!WaitNamedPipe(PIPE_NAME, NMPWAIT_WAIT_FOREVER)) {
-            _tprintf(_T("[ERRO] Ligar ao pipe '%s'! (WaitNamedPipe)\n"), PIPE_NAME);
-            exit(-1);
-        }
-        _tprintf_s(_T("[LEITOR] Ligação ao pipe do escritor... (CreateFile)\n"));
-        hPipe = CreateFile(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
-            FILE_FLAG_OVERLAPPED, NULL);
-        if (hPipe == NULL) {
-            _tprintf_s(_T("[ERRO] Ligar ao pipe '%s'! (CreateFile)\n"), PIPE_NAME);
-            exit(-1);
-        }
+    if (hPipe == NULL) {
+        _tprintf(_T("[ERRO] Não foi possível ligar ao árbitro.\n"));
+        exit(EXIT_FAILURE);
+    }
 
-        // envia o user name para saber se é valido
-        ZeroMemory(&ov, sizeof(OVERLAPPED));
-        ov.hEvent = hEv;
 
-        _tcscpy_s(msg.comando, TAM, argv[1]);
-        msg.tipo = USERNAME;
+    if (argc != 2) {
+        _tprintf(_T("[ERROR] Syntax: jogoui [username] \n"));
+        exit(-1);
+    }
+
+    _tprintf_s(_T("[ARBITRO] Esperar pelo pipe '%s' (WaitNamedPipe)\n"),
+        PIPE_NAME);
+    if (!WaitNamedPipe(PIPE_NAME, NMPWAIT_WAIT_FOREVER)) {
+        _tprintf(_T("[ERRO] Ligar ao pipe '%s'! (WaitNamedPipe)\n"), PIPE_NAME);
+        exit(-1);
+    }
+    _tprintf_s(_T("[LEITOR] Ligação ao pipe do escritor... (CreateFile)\n"));
+    hPipe = CreateFile(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+        FILE_FLAG_OVERLAPPED, NULL);
+    if (hPipe == NULL) {
+        _tprintf_s(_T("[ERRO] Ligar ao pipe '%s'! (CreateFile)\n"), PIPE_NAME);
+        exit(-1);
+    }
+
+    // envia o user name para saber se é valido
+    ZeroMemory(&ov, sizeof(OVERLAPPED));
+    ov.hEvent = hEv;
+
+    _tcscpy_s(msg.comando, TAM, argv[1]);
+    msg.tipo = USERNAME;
        
 
 
-        ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov); // muder ov
-        if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
-            _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), msg.comando, n);
-            exit(-1);
-        }
-        if (GetLastError() == ERROR_IO_PENDING) {
-            WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-            GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
-        }
+    ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov); // muder ov
+    if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+        _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), msg.comando, n);
+        exit(-1);
+    }
+    if (GetLastError() == ERROR_IO_PENDING) {
+        WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+        GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+    }
 
-        _tprintf_s(_T("[JOGOUI] Tentar login (bytes %d) (%s)\n"), n, argv[1]);
+    _tprintf_s(_T("[JOGOUI] Tentar login (bytes %d) (%s)\n"), n, argv[1]);
 
 
 
-        // TIRa uma mensagem de cada vez 
-        DWORD modo = PIPE_READMODE_MESSAGE;
-        SetNamedPipeHandleState(hPipe, &modo, NULL, NULL);
+    // TIRa uma mensagem de cada vez 
+    DWORD modo = PIPE_READMODE_MESSAGE;
+    SetNamedPipeHandleState(hPipe, &modo, NULL, NULL);
 
-        _tprintf_s(_T("[LEITOR] Liguei-me...\n"));
+    _tprintf_s(_T("[LEITOR] Liguei-me...\n"));
 
-        //CRIAR THREAD MSG
+    //CRIAR THREAD MSG
 
-        HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
-        //FORA CILCO...
+    HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
+    //FORA CILCO...
 
-        if (hThread == NULL) {
-            _tprintf_s(_T("Erro ao criar thread: %d\n"), GetLastError());
-            return 1;
-        }
+    if (hThread == NULL) {
+        _tprintf_s(_T("Erro ao criar thread: %d\n"), GetLastError());
+        return 1;
+    }
         
-        do {
-            //scanf
-            // 
-            _tprintf_s(_T("[Leitor] Pedido: "));
-            _fgetts(msg.comando, TAM, stdin);
-            if(_tcslen(msg.comando) > 0)
-                msg.comando[_tcslen(msg.comando) - 1] = _T('\0');
+    do {
+        //scanf
+        // 
+        _tprintf_s(_T("[Leitor] Pedido: "));
+        _fgetts(msg.comando, TAM, stdin);
+        if(_tcslen(msg.comando) > 0)
+            msg.comando[_tcslen(msg.comando) - 1] = _T('\0');
 
            
-            resposta = consola_jogoui(msg);
-            //writefile
-            // ANTES da operacao
-            if (resposta.tipo > ERRO) {
-                ZeroMemory(&ov, sizeof(OVERLAPPED));
-                ov.hEvent = hEv;
-                _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), resposta.comando, n);
+        resposta = consola_jogoui(msg);
+        //writefile
+        // ANTES da operacao
+        if (resposta.tipo > ERRO) {
+            ZeroMemory(&ov, sizeof(OVERLAPPED));
+            ov.hEvent = hEv;
+            _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), resposta.comando, n);
 
-                ret = WriteFile(hPipe, &resposta, sizeof(MENSAGEM), &n, &ov); // muder ov
-                if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
-                    _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), resposta.comando, n);
-                    break;
-                }
-                if (GetLastError() == ERROR_IO_PENDING) {
-                    WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-                    GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
-                    
-                }
-
-                _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, resposta.comando);
-
+            ret = WriteFile(hPipe, &resposta, sizeof(MENSAGEM), &n, &ov); // muder ov
+            if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+                _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), resposta.comando, n);
+                break;
             }
-        } while (_tcsicmp(resposta.comando, _T(":sair")));
+            if (GetLastError() == ERROR_IO_PENDING) {
+                WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+                GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+                    
+            }
 
-        WaitForSingleObject(hThread, INFINITE);
-        _tprintf(_T("Thread TERMINOU.\n"));
-        CloseHandle(hEv);
-        CloseHandle(hPipe);
-        CloseHandle(hThread);
-        // close thread
-        return 0;
+            _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, resposta.comando);
 
-    /*
-    HANDLE hPipe;
-
-    int IsLeaving = 0; //serve para o quit
-	
-	//TODO verificar a existencia do named pipe, se não existir fechar programa
-    /*
-    do {
-
-        hPipe = CreateFile(PIPE_NAME,
-            GENERIC_READ | GENERIC_WRITE,  // Acesso de Leitura e Escrita (read/write)
-            0,                             // Sem “sharing”
-            NULL,                          // Atributos de Segurança
-            OPEN_EXISTING,                 // O Pipe já tem de estar criado
-            0,                             // Atributos e Flags
-            NULL);                         // Ficheiro Template
-
-        if (hPipe != INVALID_HANDLE_VALUE) { //quando existe pipe saimos do loop
-            break;
         }
+    } while (_tcsicmp(resposta.comando, _T(":sair")));
 
-       
-		_tprintf(_T("A aguardar o servidor...\n"));
-        Sleep(1000);
-    } while (1);
-    */
-    /*
-    //TODO verificar se o username está disponivel, se não estiver encerra o programa
-	TCHAR username[50];
-    _tcscpy(username, argv[1]);
-    
-    //escrever no pipe e esperar resposta
-
-    */
-
-
-    /*
-    system("cls"); //! apenas funciona para windows
-    _tprintf(_T("====================================\n\n"));
-    _tprintf(_T("Bem Vindo ao Jogo das palavras!"));
-    _tprintf(_T("\n\n====================================\n\n"));
-
-    TCHAR command[250];
-    TCHAR* cmd[102];
+    WaitForSingleObject(hThread, INFINITE);
+    _tprintf(_T("Thread TERMINOU.\n"));
+    CloseHandle(hEv);
+    CloseHandle(hPipe);
+    CloseHandle(hThread);
+    // close thread
+    return 0;
 
    
-
-    while (IsLeaving == 0) {
-        fflush(stdout);
-        _tprintf(_T("\nComando: "));
-        _fgetts(command, sizeof(command) / sizeof(command[0]), stdin);
-        _tprintf(_T("\n"));
-
-		// Remove o newline character 
-        size_t len = _tcslen(command);
-        if (len > 0 && command[len - 1] == _T('\n')) {
-            command[len - 1] = _T('\0');
-        }
-        //TODO resolver problema de extra caracter no inicio do input do comando
-        _tprintf(_T("comando: %s \n", command));
-
-        // escrever no pipe o comando
-
-
-
-
-		
-   
-
-    
-    }
-    */
 
 }
