@@ -524,8 +524,6 @@ int _tmain(int argc, TCHAR* argv[]) {
 		letras_jogo[i] = _T('_');
 	}
 
-
-
 	hMemoPart = CreateFileMapping(
 		INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,       
 		0, sizeof(MEMORIA_PARTILHADA), MEMORY_NAME
