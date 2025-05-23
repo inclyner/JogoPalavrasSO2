@@ -6,8 +6,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <winreg.h>
-#include "arbitro.h"
-#include "utils.c"
 
 #define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
 #define TAM 200
@@ -15,93 +13,15 @@
 #define MINIMUM_GAME_PLAYERS 2
 
 
+typedef struct {
+	HANDLE hPipe[MAX_CONCURRENT_USERS];
+	HANDLE hMutex;
+	BOOL continua;
+}TDATA;
 
-
-
-int _tmain(int argc, TCHAR* argv[]) {
-
-	DWORD i;
-	HANDLE hPipe;
-	TCHAR buf[256];
-
-#ifdef UNICODE
-	_setmode(_fileno(stdin), _O_WTEXT);
-	_setmode(_fileno(stdout), _O_WTEXT);
-	_setmode(_fileno(stderr), _O_WTEXT);
-#endif
-
-
-	int max_letras, ritmo;
-	getRegistryValues(&max_letras, &ritmo);
-
-	TCHAR* letras_jogo = (TCHAR*)malloc(max_letras * sizeof(TCHAR));
-
-	TCHAR abecedario[26] = {
-		_T('A'), _T('B'), _T('C'), _T('D'), _T('E'), _T('F'), _T('G'), _T('H'),
-		_T('I'), _T('J'), _T('K'), _T('L'), _T('M'), _T('N'), _T('O'), _T('P'),
-		_T('Q'), _T('R'), _T('S'), _T('T'), _T('U'), _T('V'), _T('W'), _T('X'),
-		_T('Y'), _T('Z')
-	};
-
-	if (letras_jogo == NULL) {
-		_tprintf(_T("Erro a alocar memória!\n"));
-		return 1;
-	}
-	for (int i = 0; i < max_letras; i++) {
-		letras_jogo[i] = _T('_');
-	}
-
-	// Preparar dados da thread 
-	TDATA td = { {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL},NULL,TRUE };
-	td.hMutex = CreateMutex(NULL, FALSE, NULL);
-	HANDLE hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
-
-	// Criar mutex
-	// CRiar thread
-	do {
-		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"),
-			PIPE_NAME);
-		hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_WAIT
-			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(buf), sizeof(buf),
-			3000, NULL);
-		if (hPipe == INVALID_HANDLE_VALUE) {
-			_tprintf_s(_T("[ERRO] Criar Named Pipe! (CreateNamedPipe)"));
-			exit(-1);
-		}
-
-		_tprintf_s(_T("[ESCRITOR] Esperar ligação de um leitor... (ConnectNamedPipe)\n"));
-		if (!ConnectNamedPipe(hPipe, NULL)) {
-			_tprintf_s(_T("[ERRO] Ligação ao leitor! (ConnectNamedPipe\n"));
-			exit(-1);
-		}
-
-
-		WaitForSingleObject(td.hMutex, INFINITE);
-		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-			if (td.hPipe[i] == NULL) {
-				td.hPipe[i] = hPipe;
-				break;
-			}
-		}
-		ReleaseMutex(td.hMutex);
-		//Criar theread cliente (hpipe)
-		
-		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)hPipe, 0, NULL);
-
-	} while (td.continua);
-
-
-	
-
-	WaitForSingleObject(hThreadDistribui, INFINITE);
-	CloseHandle(hThreadDistribui);
-	CloseHandle(td.hMutex);
-	free(letras_jogo);
-
-
-	return 0;
-
-}
+// prototipos funções
+DWORD WINAPI processArbitroComands(LPVOID param);
+TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras);
 
 
 void consola_arbitro(TCHAR comando[]) {
@@ -287,9 +207,230 @@ DWORD WINAPI distribui(LPVOID data) {
 	ExitThread(0);
 }
 
+int _tmain(int argc, TCHAR* argv[]) {
+
+	DWORD i;
+	HANDLE hPipe;
+	TCHAR buf[256];
+
+#ifdef UNICODE
+	_setmode(_fileno(stdin), _O_WTEXT);
+	_setmode(_fileno(stdout), _O_WTEXT);
+	_setmode(_fileno(stderr), _O_WTEXT);
+#endif
+
+
+	int max_letras, ritmo;
+	getRegistryValues(&max_letras, &ritmo);
+
+	TCHAR* letras_jogo = (TCHAR*)malloc(max_letras * sizeof(TCHAR));
+
+	TCHAR abecedario[26] = {
+		_T('A'), _T('B'), _T('C'), _T('D'), _T('E'), _T('F'), _T('G'), _T('H'),
+		_T('I'), _T('J'), _T('K'), _T('L'), _T('M'), _T('N'), _T('O'), _T('P'),
+		_T('Q'), _T('R'), _T('S'), _T('T'), _T('U'), _T('V'), _T('W'), _T('X'),
+		_T('Y'), _T('Z')
+	};
+
+	if (letras_jogo == NULL) {
+		_tprintf(_T("Erro a alocar memória!\n"));
+		return 1;
+	}
+	for (int i = 0; i < max_letras; i++) {
+		letras_jogo[i] = _T('_');
+	}
+
+	/*
+	DWORD adminThreadId;
+	//lança thread que ouve comandos do admin
+	
+	HANDLE hThreadArbitro;
+	HANDLE hThreadAdmitUsers;
+	
+	hThreadArbitro = CreateThread(
+		NULL,
+		0,
+		processArbitroComands,
+		NULL,
+		0,
+		&adminThreadId
+	);
+
+	if (hThreadArbitro == NULL) {
+		_tprintf("Erro ao criar thread(arbitro): %lu\n", GetLastError());
+		return 1;
+	}
+	
+	hThreadAdmitUsers = CreateThread(
+		NULL,
+		0,
+		admitUsers,
+		NULL,
+		0,
+		&adminThreadId
+	);
+	if (hThreadAdmitUsers == NULL) {
+		_tprintf("Erro ao criar thread(AdmitUsers): %lu\n", GetLastError());
+		return 1;
+	}
+	*/
+	// Preparar dados da thread 
+	TDATA td = { {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL},NULL,TRUE };
+	td.hMutex = CreateMutex(NULL, FALSE, NULL);
+	HANDLE hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
+
+	// Criar mutex
+	// CRiar thread
+	do {
+		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"),
+			PIPE_NAME);
+		hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_WAIT
+			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(buf), sizeof(buf),
+			3000, NULL);
+		if (hPipe == INVALID_HANDLE_VALUE) {
+			_tprintf_s(_T("[ERRO] Criar Named Pipe! (CreateNamedPipe)"));
+			exit(-1);
+		}
+
+		_tprintf_s(_T("[ESCRITOR] Esperar ligação de um leitor... (ConnectNamedPipe)\n"));
+		if (!ConnectNamedPipe(hPipe, NULL)) {
+			_tprintf_s(_T("[ERRO] Ligação ao leitor! (ConnectNamedPipe\n"));
+			exit(-1);
+		}
+
+
+		WaitForSingleObject(td.hMutex, INFINITE);
+		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+			if (td.hPipe[i] == NULL) {
+				td.hPipe[i] = hPipe;
+				break;
+			}
+		}
+		ReleaseMutex(td.hMutex);
+		//Criar theread cliente (hpipe
+		
+		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)hPipe, 0, NULL);
+
+	} while (td.continua);
+
+
+	//TODO main loop do jogo
+	//while (currentUsers >= MINIMUM_GAME_PLAYERS)
+	//{}
+	
+
+	WaitForSingleObject(hThreadDistribui, INFINITE);
+	CloseHandle(hThreadDistribui);
+	CloseHandle(td.hMutex);
 
 
 
+	/*
+	WaitForSingleObject(hThreadArbitro, INFINITE);
+	// Libertar memória
+	free(letras_jogo);
+	CloseHandle(hThreadArbitro);
+	CloseHandle(hThreadAdmitUsers);
+	*/
+
+	return 0;
+
+}
+
+
+
+int getRegistryValues(int* maxletras, int* ritmo) {
+	HKEY hKey;
+	DWORD tipo = REG_DWORD;
+	DWORD tam = sizeof(DWORD);
+	DWORD valMaxLetras = 6; 
+	DWORD valRitmo = 3;     
+	
+	TCHAR chave[] = _T("Software\\TrabSO2");
+
+	
+	LSTATUS res = RegOpenKeyEx(
+		HKEY_CURRENT_USER,
+		chave,
+		0,
+		KEY_ALL_ACCESS,
+		&hKey
+	);
+
+	if (res != ERROR_SUCCESS) {
+		_tprintf(_T("Chave não encontrada. A criar...\n"));
+
+		res = RegCreateKeyEx(
+			HKEY_CURRENT_USER,
+			_T("Software\\TrabSO2"),
+			0,
+			NULL,
+			REG_OPTION_NON_VOLATILE,
+			KEY_ALL_ACCESS,
+			NULL,
+			&hKey,
+			NULL
+		);
+
+		if (res != ERROR_SUCCESS) {
+			_tprintf(_T("Erro ao criar a chave!\n"));
+			return 1;
+		}
+
+		//RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+		//RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
+	}
+	
+	tam = sizeof(DWORD);
+	res = RegQueryValueEx(hKey, _T("MAXLETRAS"), NULL, &tipo, (LPBYTE)&valMaxLetras, &tam);
+	if (res != ERROR_SUCCESS) {
+		_tprintf(_T("MAXLETRAS não existe, a criar com valor 6.\n"));
+		valMaxLetras = 6;
+		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+	}
+	else
+	{
+		_tprintf(_T("MAXLETRAS lido! => %d\n"), valMaxLetras);
+		if (valMaxLetras > 12) {
+			_tprintf(_T("MAXLETRAS superior a 12. A corrigir para 12.\n"));
+			valMaxLetras = 12;
+			RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+		}
+	}
+	res = RegQueryValueEx(hKey, _T("RITMO"), NULL, &tipo, (LPBYTE)&valRitmo, &tam);
+	if (res != ERROR_SUCCESS) {
+		_tprintf(_T("RITMO não existe, a criar com valor 3.\n"));
+		valRitmo = 3;
+		RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
+	}
+	else
+	{
+		_tprintf(_T("RITMO lido! => %d\n"), valRitmo);
+	}
+
+
+	
+
+
+
+	RegCloseKey(hKey);
+	*maxletras = valMaxLetras;
+	*ritmo = valRitmo;
+
+	return 0;
+}
+
+
+TCHAR* getRandomLetter(TCHAR* abecedario, int max_letras) {
+	int randomIndex = rand() % 26;
+	TCHAR* letra = (TCHAR*)malloc(sizeof(TCHAR));
+	if (letra == NULL) {
+		_tprintf(_T("Erro a alocar memória!\n"));
+		return NULL;
+	}
+	letra = abecedario[randomIndex];
+	return letra;
+}
 
 
 DWORD WINAPI processArbitroComands(LPVOID param) {

@@ -10,11 +10,41 @@
 #define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
 
 
-//protótipos funções
-HANDLE esperarPipeServidor(int maxTentativas, int intervaloMs);
-DWORD WINAPI recebMsg(LPVOID data);
 
 
+DWORD WINAPI recebMsg(LPVOID data) {
+    TCHAR buf[256];
+    HANDLE hPipe = (HANDLE)data;
+    BOOL ret;
+    DWORD n;
+
+
+    //FORA CILCO...
+    OVERLAPPED ov;
+    HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+    do {
+
+        //ANTEs da operaçao 
+        ZeroMemory(&ov, sizeof(OVERLAPPED));
+        ov.hEvent = hEv;
+        //leitor assincrona com o &ov
+        ret = ReadFile(hPipe, buf, sizeof(buf), &n, &ov);
+        if (!ret && GetLastError() != ERROR_IO_PENDING) {
+            _tprintf_s(_T("[ERROR] %d (%d bytes)... (ReadFile)\n"), ret, n);
+            break;
+        }
+        if (GetLastError() == ERROR_IO_PENDING) {
+            WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+            GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+        }
+        buf[n / sizeof(TCHAR)] = _T('\0');
+
+        _tprintf_s(_T("[LEITOR] Recebi %d bytes: '%s'... (ReadFile)\n"), n, buf);
+    } while (1);
+    CloseHandle(hEv);
+    ExitThread(0);
+}
 
 
 
@@ -33,102 +63,86 @@ int _tmain(int argc, TCHAR* argv[]) {
 
     #endif
         
+        if (argc != 2) {
+            _tprintf(_T("[ERROR] Syntax: jogoui [username] \n"));
+            exit(-1);
+        }
 
+        _tprintf_s(_T("[ARBITRO] Esperar pelo pipe '%s' (WaitNamedPipe)\n"),
+            PIPE_NAME);
+        if (!WaitNamedPipe(PIPE_NAME, NMPWAIT_WAIT_FOREVER)) {
+            _tprintf(_T("[ERRO] Ligar ao pipe '%s'! (WaitNamedPipe)\n"), PIPE_NAME);
+            exit(-1);
+        }
+        _tprintf_s(_T("[LEITOR] Ligação ao pipe do escritor... (CreateFile)\n"));
+        hPipe = CreateFile(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+            FILE_FLAG_OVERLAPPED, NULL);
+        if (hPipe == NULL) {
+            _tprintf_s(_T("[ERRO] Ligar ao pipe '%s'! (CreateFile)\n"), PIPE_NAME);
+            exit(-1);
+        }
 
-    if (argc != 2) {
-        _tprintf(_T("[ERROR] Syntax: jogoui [username] \n"));
-        exit(-1);
-    }
-
-    HANDLE hPipe;
-
-    int IsLeaving = 0; //serve para o quit
-
-    //verifica a existencia do pipe (verifica se o arbitro está a correr)
-    HANDLE hPipe = esperarPipeServidor(10, 1000); // tenta 10 vezes, com 1s entre cada
-
-    if (hPipe == NULL) {
-        _tprintf(_T("[ERRO] Não foi possível ligar ao árbitro.\n"));
-        exit(EXIT_FAILURE);
-    }
-
-
-
-    _tprintf_s(_T("[ARBITRO] Esperar pelo pipe '%s' (WaitNamedPipe)\n"),
-        PIPE_NAME);
-    if (!WaitNamedPipe(PIPE_NAME, NMPWAIT_WAIT_FOREVER)) {
-        _tprintf(_T("[ERRO] Ligar ao pipe '%s'! (WaitNamedPipe)\n"), PIPE_NAME);
-        exit(-1);
-    }
-    _tprintf_s(_T("[LEITOR] Ligação ao pipe do escritor... (CreateFile)\n"));
-    hPipe = CreateFile(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
-        FILE_FLAG_OVERLAPPED, NULL);
-    if (hPipe == NULL) {
-        _tprintf_s(_T("[ERRO] Ligar ao pipe '%s'! (CreateFile)\n"), PIPE_NAME);
-        exit(-1);
-    }
-
-    // envia o user name para saber se é valido
-    ZeroMemory(&ov, sizeof(OVERLAPPED));
-    ov.hEvent = hEv;
-
-    ret = WriteFile(hPipe, argv[1], (DWORD)_tcslen(argv[1]) * sizeof(TCHAR), &n, &ov); // muder ov
-    if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
-        _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), buf, n);
-        exit(-1);
-    }
-    if (GetLastError() == ERROR_IO_PENDING) {
-        WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-        GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
-    }
-
-    _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, argv[1]);
-
-
-
-    // TIRa uma mensagem de cada vez 
-    DWORD modo = PIPE_READMODE_MESSAGE;
-    SetNamedPipeHandleState(hPipe, &modo, NULL, NULL);
-
-    _tprintf_s(_T("[LEITOR] Liguei-me...\n"));
-
-    //CRIAR THREAD MSG
-
-    HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
-    //FORA CILCO...
-        
-    while (1) {
-        //scanf
-        // 
-        _tprintf_s(_T("[Leitor] Pedido: "));
-        _fgetts(buf, 256, stdin);
-        buf[_tcslen(buf) - 1] = _T('\0');
-            
-        //writefile
-        // ANTES da operacao
+        // envia o user name para saber se é valido
         ZeroMemory(&ov, sizeof(OVERLAPPED));
         ov.hEvent = hEv;
-        _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), buf, n);
 
-        ret = WriteFile(hPipe, buf, (DWORD)_tcslen(buf) * sizeof(TCHAR), &n, &ov); // muder ov
+        ret = WriteFile(hPipe, argv[1], (DWORD)_tcslen(argv[1]) * sizeof(TCHAR), &n, &ov); // muder ov
         if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
             _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), buf, n);
-            break;
+            exit(-1);
         }
         if (GetLastError() == ERROR_IO_PENDING) {
             WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
             GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
         }
 
-        _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, buf);
+        _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, argv[1]);
 
 
-    }
-    CloseHandle(hEv);
-    CloseHandle(hPipe);
-    CloseHandle(hThread);
-    // close thread
-    return 0;
+
+        // TIRa uma mensagem de cada vez 
+        DWORD modo = PIPE_READMODE_MESSAGE;
+        SetNamedPipeHandleState(hPipe, &modo, NULL, NULL);
+
+        _tprintf_s(_T("[LEITOR] Liguei-me...\n"));
+
+        //CRIAR THREAD MSG
+
+        HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
+        //FORA CILCO...
+        
+        while (1) {
+            //scanf
+            // 
+            _tprintf_s(_T("[Leitor] Pedido: "));
+            _fgetts(buf, 256, stdin);
+            buf[_tcslen(buf) - 1] = _T('\0');
+            
+            //writefile
+            // ANTES da operacao
+            ZeroMemory(&ov, sizeof(OVERLAPPED));
+            ov.hEvent = hEv;
+            _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), buf, n);
+
+            ret = WriteFile(hPipe, buf, (DWORD)_tcslen(buf) * sizeof(TCHAR), &n, &ov); // muder ov
+            if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+                _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), buf, n);
+                break;
+            }
+            if (GetLastError() == ERROR_IO_PENDING) {
+                WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
+                GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+            }
+
+            _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, buf);
+
+
+        }
+        CloseHandle(hEv);
+        CloseHandle(hPipe);
+        CloseHandle(hThread);
+        // close thread
+        return 0;
 
     /*
     HANDLE hPipe;
@@ -203,68 +217,4 @@ int _tmain(int argc, TCHAR* argv[]) {
     }
     */
 
-}
-
-
-
-DWORD WINAPI recebMsg(LPVOID data) {
-    TCHAR buf[256];
-    HANDLE hPipe = (HANDLE)data;
-    BOOL ret;
-    DWORD n;
-
-
-    //FORA CILCO...
-    OVERLAPPED ov;
-    HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
-
-    do {
-
-        //ANTEs da operaçao 
-        ZeroMemory(&ov, sizeof(OVERLAPPED));
-        ov.hEvent = hEv;
-        //leitor assincrona com o &ov
-        ret = ReadFile(hPipe, buf, sizeof(buf), &n, &ov);
-        if (!ret && GetLastError() != ERROR_IO_PENDING) {
-            _tprintf_s(_T("[ERROR] %d (%d bytes)... (ReadFile)\n"), ret, n);
-            break;
-        }
-        if (GetLastError() == ERROR_IO_PENDING) {
-            WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-            GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
-        }
-        buf[n / sizeof(TCHAR)] = _T('\0');
-
-        _tprintf_s(_T("[LEITOR] Recebi %d bytes: '%s'... (ReadFile)\n"), n, buf);
-    } while (1);
-    CloseHandle(hEv);
-    ExitThread(0);
-}
-
-
-HANDLE esperarPipeServidor(int maxTentativas, int intervaloMs) {
-    HANDLE hPipe;
-    int tentativas = 0;
-
-    do {
-        hPipe = CreateFile(
-            PIPE_NAME,
-            GENERIC_READ | GENERIC_WRITE,
-            0,
-            NULL,
-            OPEN_EXISTING,
-            0,
-            NULL);
-
-        if (hPipe != INVALID_HANDLE_VALUE) {
-            return hPipe; // Pipe encontrado
-        }
-
-        _tprintf(_T("A aguardar o árbitro... (%d/%d)\n"), tentativas + 1, maxTentativas);
-        Sleep(intervaloMs);
-        tentativas++;
-
-    } while (tentativas < maxTentativas);
-
-    return NULL; // Pipe não encontrado
 }
