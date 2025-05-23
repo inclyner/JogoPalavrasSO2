@@ -6,6 +6,17 @@
 // prototipos funções
 DWORD WINAPI processArbitroComands(LPVOID param);
 
+
+const TCHAR* DICIONARIO[] = {
+	_T("GATO"), _T("CÃO"), _T("RATO"), _T("SAPO"), _T("LOBO"),
+	_T("LIVRO"), _T("BOLA"), _T("MESA"), _T("PORTA"), _T("CASA"),
+	_T("CARRO"), _T("FACA"), _T("PATO"), _T("PEIXE"), _T("CHAVE"),
+	_T("BANCO"), _T("CARTA"), _T("FAROL"), _T("LATA"), _T("FITA"),
+	_T("VIDRO"), _T("TECLA"), _T("JANELA"), _T("CADEIRA"), _T("CAMA"),
+	_T("TINHA"), _T("BICHO"), _T("MANTO"), _T("FUMO"), _T("TROCO")
+};
+const int NUM_PALAVRAS = sizeof(DICIONARIO) / sizeof(DICIONARIO[0]);
+
 TCHAR letraRandom() {
 	return _T('A') + (rand() % 26);
 }
@@ -168,7 +179,6 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 }
 
 
-
 MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
@@ -210,11 +220,50 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 		}
 		else {
 			_stprintf_s(resposta.comando, TAM, _T("%d"), -1);
+			_tprintf_s(_T("O jogador %s já existe.\n"), msg.comando);
+			// fecha pipe do jogador
+			// quando o jogoui sabe que deve fechar a conexão não fecha
+			/*WaitForSingleObject(ptd->hMutex, INFINITE);
+			ptd->players[myPos].hPipe = NULL;  // desassocia o pipe
+			_tcscpy_s(ptd->players[myPos].name, TAM_USERNAME, _T(""));  // limpa o nome
+			ReleaseMutex(ptd->hMutex);
+			*/
+		
 		}
 		
 		break;
 	case PALAVRA:
 		resposta.tipo = PALAVRA;
+		int letras_usadas[MAX_LETRAS];
+		BOOL ok = validarPalavra(msg.comando, ptd->memoria_partilhada, letras_usadas);
+
+		_tprintf_s(_T(" palavra %s\n"), msg.comando);
+
+		if (ok) {
+			_tprintf(_T("[ARBITRO] Palavra válida: %s\n"), msg.comando);
+
+			WaitForSingleObject(ptd->hMutex, INFINITE);
+			td.players[myPos].points += _tcslen(msg.comando);
+			_tcscpy_s(ptd->memoria_partilhada->ultima_palavra, MAX_LETRAS, msg.comando);
+
+			// Remover letras usadas
+			for (int i = 0; i < _tcslen(msg.comando); i++) {
+				ptd->memoria_partilhada->letras[letras_usadas[i]] = _T('_');
+			}
+			ReleaseMutex(ptd->hMutex);
+
+			_stprintf_s(resposta.comando, TAM, _T("Palavra válida! +%d pontos."), _tcslen(msg.comando));
+		}
+		else {
+			_tprintf(_T("[ARBITRO] Palavra inválida: %s\n"), msg.comando);
+
+			WaitForSingleObject(ptd->hMutex, INFINITE);
+			td.players[myPos].points -= (_tcslen(msg.comando) / 2.0);
+			ReleaseMutex(ptd->hMutex);
+
+			_stprintf_s(resposta.comando, TAM, _T("Palavra inválida! -%.1f pontos."), (_tcslen(msg.comando) / 2.0));
+		}
+		break;
 		// ver se existe no dicionario
 		// ver se as letras todas fazem parte das letras da shared memory
 		// ver se as letras da palavra são menores do que 
@@ -379,8 +428,11 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 		// buf[n / sizeof(TCHAR)] = _T('\0');
 
 		_tprintf_s(_T("[ESCRITOR] Recebi '%s'(%d bytes) ...... (ReadFile)\n"), msg.comando, n);
-			// PROCESSAMENTO
-		// TODO todo o processamento vai ser feito aqui
+		// PROCESSAMENTO
+		
+
+
+		
 		//ANTES DA OPERACAO 
 		
 		
@@ -494,6 +546,126 @@ DWORD WINAPI distribui(LPVOID data) {
 	ExitThread(0);
 }
 
+void getRegistryValues(int* maxletras, int* ritmo) {
+	HKEY hKey;
+	DWORD tipo = REG_DWORD;
+	DWORD tam = sizeof(DWORD);
+	DWORD valMaxLetras = 6;
+	DWORD valRitmo = 3;
+
+	TCHAR chave[] = _T("Software\\TrabSO2");
+
+
+	LSTATUS res = RegOpenKeyEx(
+		HKEY_CURRENT_USER,
+		chave,
+		0,
+		KEY_ALL_ACCESS,
+		&hKey
+	);
+
+	if (res != ERROR_SUCCESS) {
+		_tprintf(_T("Chave não encontrada. A criar...\n"));
+
+		res = RegCreateKeyEx(
+			HKEY_CURRENT_USER,
+			_T("Software\\TrabSO2"),
+			0,
+			NULL,
+			REG_OPTION_NON_VOLATILE,
+			KEY_ALL_ACCESS,
+			NULL,
+			&hKey,
+			NULL
+		);
+
+		if (res != ERROR_SUCCESS) {
+			_tprintf(_T("Erro ao criar a chave!\n"));
+			return 1;
+		}
+
+		//RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+		//RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
+	}
+
+	tam = sizeof(DWORD);
+	res = RegQueryValueEx(hKey, _T("MAXLETRAS"), NULL, &tipo, (LPBYTE)&valMaxLetras, &tam);
+	if (res != ERROR_SUCCESS) {
+		_tprintf(_T("MAXLETRAS não existe, a criar com valor %D.\n"), DEFAULT_LETRAS);
+		valMaxLetras = DEFAULT_LETRAS;
+		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+	}
+	else
+	{
+		_tprintf(_T("MAXLETRAS lido! => %d\n"), valMaxLetras);
+		if (valMaxLetras > MAX_LETRAS) {
+			_tprintf(_T("MAXLETRAS superior a %d. A corrigir para %d.\n"), MAX_LETRAS, MAX_LETRAS);
+			valMaxLetras = MAX_LETRAS;
+			RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
+		}
+	}
+	res = RegQueryValueEx(hKey, _T("RITMO"), NULL, &tipo, (LPBYTE)&valRitmo, &tam);
+	if (res != ERROR_SUCCESS) {
+		_tprintf(_T("RITMO não existe, a criar com valor %d.\n"), DEFAULT_RITMO);
+		valRitmo = DEFAULT_RITMO;
+		RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
+	}
+	else
+	{
+		_tprintf(_T("RITMO lido! => %d\n"), valRitmo);
+	}
+
+
+	RegCloseKey(hKey);
+	*maxletras = valMaxLetras;
+	*ritmo = valRitmo;
+
+	return 0;
+}
+
+
+BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada, int letras_usadas[MAX_LETRAS]) {
+	TCHAR letras_visiveis[MAX_LETRAS];
+	BOOL usada[MAX_LETRAS] = { FALSE };
+	int i, j, len_palavra = _tcslen(palavra);
+
+	// Copiar letras visíveis (para manipular localmente)
+	for (i = 0; i < memoria_partilhada->num_letras; i++) {
+		letras_visiveis[i] = memoria_partilhada->letras[i];
+	}
+
+	// Verificar se todas as letras da palavra estão nas letras visíveis (e marcar posições)
+	for (i = 0; i < len_palavra; i++) {
+		TCHAR c = _totupper(palavra[i]);
+		BOOL encontrada = FALSE;
+
+		for (j = 0; j < memoria_partilhada->num_letras; j++) {
+			if (!usada[j] && letras_visiveis[j] == c) {
+				usada[j] = TRUE;
+				letras_usadas[i] = j; // regista a posição usada
+				encontrada = TRUE;
+				break;
+			}
+		}
+
+		if (!encontrada) {
+			return FALSE; // letra não encontrada suficientes vezes
+		}
+	}
+
+	// Verificar se palavra está no dicionário
+	BOOL in_dicionario = FALSE;
+	for (i = 0; i < NUM_PALAVRAS; i++) {
+		if (_tcsicmp(DICIONARIO[i], palavra) == 0) {
+			in_dicionario = TRUE;
+			break;
+		}
+	}
+	
+	return in_dicionario;
+}
+
+
 int _tmain(int argc, TCHAR* argv[]) {
 
 	DWORD i;
@@ -561,6 +733,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	td.hMutex = NULL;
 	td.max_letras = max_letras;
 	td.id_letra = 0;
+	td.memoriaPartilhada = memoria;
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		td.players[i].hPipe = NULL;
 		_tcscpy_s(td.players[i].name, TAM_USERNAME, _T("NO_USER"));
@@ -599,6 +772,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 		}
 		ReleaseMutex(td.hMutex);
 
+		
+
 		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)&td, 0, NULL);
 		td.hThreadLetras = CreateThread(NULL, 0, letras, (LPVOID)&td, 0, NULL);
 		SuspendThread(td.hThreadLetras);
@@ -618,81 +793,5 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 
 
-int getRegistryValues(int* maxletras, int* ritmo) {
-	HKEY hKey;
-	DWORD tipo = REG_DWORD;
-	DWORD tam = sizeof(DWORD);
-	DWORD valMaxLetras = 6; 
-	DWORD valRitmo = 3;     
-	
-	TCHAR chave[] = _T("Software\\TrabSO2");
-
-	
-	LSTATUS res = RegOpenKeyEx(
-		HKEY_CURRENT_USER,
-		chave,
-		0,
-		KEY_ALL_ACCESS,
-		&hKey
-	);
-
-	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("Chave não encontrada. A criar...\n"));
-
-		res = RegCreateKeyEx(
-			HKEY_CURRENT_USER,
-			_T("Software\\TrabSO2"),
-			0,
-			NULL,
-			REG_OPTION_NON_VOLATILE,
-			KEY_ALL_ACCESS,
-			NULL,
-			&hKey,
-			NULL
-		);
-
-		if (res != ERROR_SUCCESS) {
-			_tprintf(_T("Erro ao criar a chave!\n"));
-			return 1;
-		}
-
-		//RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
-		//RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
-	}
-	
-	tam = sizeof(DWORD);
-	res = RegQueryValueEx(hKey, _T("MAXLETRAS"), NULL, &tipo, (LPBYTE)&valMaxLetras, &tam);
-	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("MAXLETRAS não existe, a criar com valor %D.\n"), DEFAULT_LETRAS);
-		valMaxLetras = DEFAULT_LETRAS;
-		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
-	}
-	else
-	{
-		_tprintf(_T("MAXLETRAS lido! => %d\n"), valMaxLetras);
-		if (valMaxLetras > MAX_LETRAS) {
-			_tprintf(_T("MAXLETRAS superior a %d. A corrigir para %d.\n"),MAX_LETRAS, MAX_LETRAS);
-			valMaxLetras = MAX_LETRAS;
-			RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
-		}
-	}
-	res = RegQueryValueEx(hKey, _T("RITMO"), NULL, &tipo, (LPBYTE)&valRitmo, &tam);
-	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("RITMO não existe, a criar com valor %d.\n"),DEFAULT_RITMO);
-		valRitmo = DEFAULT_RITMO;
-		RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
-	}
-	else
-	{
-		_tprintf(_T("RITMO lido! => %d\n"), valRitmo);
-	}
-
-
-	RegCloseKey(hKey);
-	*maxletras = valMaxLetras;
-	*ritmo = valRitmo;
-
-	return 0;
-}
 
 

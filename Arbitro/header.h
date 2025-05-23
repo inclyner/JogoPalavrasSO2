@@ -32,12 +32,14 @@ typedef struct {
 	DWORD max_letras;
 	DWORD id_letra;
 	HANDLE hThreadLetras;
+	MEMORIA_PARTILHADA *memoria_partilhada;
 }TDATA;
 
 typedef struct {
 	TCHAR name[TAM_USERNAME];
 	DWORD points;
 }PLAYER_MP;
+
 typedef struct {
 	DWORD num_letras;
 	TCHAR letras[MAX_LETRAS];
