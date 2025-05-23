@@ -23,19 +23,6 @@ typedef struct {
 } PLAYER;
 
 typedef struct {
-	PLAYER players[MAX_CONCURRENT_USERS];
-	HANDLE hMutex;
-	BOOL continua, isGameOn;
-	DWORD n_users;
-	DWORD next_id;
-	DWORD ritmo;
-	DWORD max_letras;
-	DWORD id_letra;
-	HANDLE hThreadLetras;
-	MEMORIA_PARTILHADA *memoria_partilhada;
-}TDATA;
-
-typedef struct {
 	TCHAR name[TAM_USERNAME];
 	DWORD points;
 }PLAYER_MP;
@@ -46,6 +33,25 @@ typedef struct {
 	PLAYER_MP players[MAX_CONCURRENT_USERS];
 	TCHAR ultima_palavra[MAX_LETRAS];
 }MEMORIA_PARTILHADA;
+
+
+typedef struct {
+	PLAYER players[MAX_CONCURRENT_USERS];
+	HANDLE hMutex;
+	BOOL continua, isGameOn;
+	DWORD n_users;
+	DWORD next_id;
+	DWORD ritmo;
+	DWORD max_letras;
+	DWORD id_letra;
+	HANDLE hThreadLetras;
+	MEMORIA_PARTILHADA *memoria_partilhada;
+	DWORD id_lider_atual;
+}TDATA;
+
+
+
+
 
 
 

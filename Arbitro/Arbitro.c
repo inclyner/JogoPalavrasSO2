@@ -1,14 +1,14 @@
-// Arbitro.c : This file contains the 'main' function. Program execution begins and ends there.
+Ôªø// Arbitro.c : This file contains the 'main' function. Program execution begins and ends there.
 //
 #include "header.h"
 #include "Arbitro.h"
 
-// prototipos funÁıes
+// prototipos fun√ß√µes
 DWORD WINAPI processArbitroComands(LPVOID param);
 
 
 const TCHAR* DICIONARIO[] = {
-	_T("GATO"), _T("C√O"), _T("RATO"), _T("SAPO"), _T("LOBO"),
+	_T("GATO"), _T("C√ÉO"), _T("RATO"), _T("SAPO"), _T("LOBO"),
 	_T("LIVRO"), _T("BOLA"), _T("MESA"), _T("PORTA"), _T("CASA"),
 	_T("CARRO"), _T("FACA"), _T("PATO"), _T("PEIXE"), _T("CHAVE"),
 	_T("BANCO"), _T("CARTA"), _T("FAROL"), _T("LATA"), _T("FITA"),
@@ -110,7 +110,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 
 
 	if (token == NULL) {
-		_tprintf(_T("Comando inv·lido.\n"));
+		_tprintf(_T("Comando inv√°lido.\n"));
 		// envia isto 
 		return resposta;
 	}
@@ -131,7 +131,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 	else if (_tcscmp(token, _T("excluir")) == 0) {
 		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
 		if (token == NULL) {
-			_tprintf(_T("Comando inv·lido.\n"));
+			_tprintf(_T("Comando inv√°lido.\n"));
 		}
 		else {
 			_tprintf(_T("excluir %s \n"), token);
@@ -143,14 +143,14 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 				ReleaseMutex(ptd->hMutex);
 				//_tcscpy_s(resposta.comando, TAM, _T(":sair"));
 			} else {
-				_tprintf(_T("Username n„o existe.\n"));
+				_tprintf(_T("Username n√£o existe.\n"));
 			}
 		}
 	}
 	else if (_tcscmp(token, _T("iniciarbot")) == 0) {
 		token = _tcstok_s(comando_token, _T(" ,\n"), &comando_token);
 		if (token == NULL) {
-			_tprintf(_T("Comando inv·lido.\n"));
+			_tprintf(_T("Comando inv√°lido.\n"));
 		}
 		else {
 			_tprintf(_T("inciarbot %s \n"), token);
@@ -163,7 +163,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 			_stprintf_s(resposta.comando, TAM, _T("[ARBITRO] Ritmo foi aumentado para %d segundos."), ptd->ritmo);
 		}
 		else {
-			_tprintf(_T("O Ritmo j· se encontra no minimo (1).\n"));
+			_tprintf(_T("O Ritmo j√° se encontra no minimo (1).\n"));
 		}
 	}
 	else if (_tcscmp(token, _T("travar")) == 0) {
@@ -195,7 +195,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 
 	switch (msg.tipo) {
 	case USERNAME:
-		_tprintf_s(_T("O jogador %s est· a tentar entrar no jogo.\n"), msg.comando);
+		_tprintf_s(_T("O jogador %s est√° a tentar entrar no jogo.\n"), msg.comando);
 
 		if (isUserValid(msg, td)) {
 			resposta.tipo = USERNAME;
@@ -220,9 +220,9 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 		}
 		else {
 			_stprintf_s(resposta.comando, TAM, _T("%d"), -1);
-			_tprintf_s(_T("O jogador %s j· existe.\n"), msg.comando);
+			_tprintf_s(_T("O jogador %s j√° existe.\n"), msg.comando);
 			// fecha pipe do jogador
-			// quando o jogoui sabe que deve fechar a conex„o n„o fecha
+			// quando o jogoui sabe que deve fechar a conex√£o n√£o fecha
 			/*WaitForSingleObject(ptd->hMutex, INFINITE);
 			ptd->players[myPos].hPipe = NULL;  // desassocia o pipe
 			_tcscpy_s(ptd->players[myPos].name, TAM_USERNAME, _T(""));  // limpa o nome
@@ -235,12 +235,12 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 	case PALAVRA:
 		resposta.tipo = PALAVRA;
 		int letras_usadas[MAX_LETRAS];
-		BOOL ok = validarPalavra(msg.comando, ptd->memoria_partilhada, letras_usadas);
+		BOOL palavra_valida = validarPalavra(msg.comando, ptd->memoria_partilhada, letras_usadas);
 
 		_tprintf_s(_T(" palavra %s\n"), msg.comando);
 
-		if (ok) {
-			_tprintf(_T("[ARBITRO] Palavra v·lida: %s\n"), msg.comando);
+		if (palavra_valida) {
+			_tprintf(_T("[ARBITRO] Palavra v√°lida: %s\n"), msg.comando);
 
 			WaitForSingleObject(ptd->hMutex, INFINITE);
 			td.players[myPos].points += _tcslen(msg.comando);
@@ -252,21 +252,45 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 			}
 			ReleaseMutex(ptd->hMutex);
 
-			_stprintf_s(resposta.comando, TAM, _T("Palavra v·lida! +%d pontos."), _tcslen(msg.comando));
+			_stprintf_s(resposta.comando, TAM, _T("Palavra v√°lida! +%d pontos."), _tcslen(msg.comando));
+			//anunciar que jogador x acertou palavra y e ganhou z pontos
+			MENSAGEM broadcast;
+			broadcast.tipo = COMANDO; 
+			_stprintf_s(broadcast.comando, TAM, _T("%s acertou: %s (+%d pontos)"),
+				td.players[myPos].name,
+				msg.comando,
+				_tcslen(msg.comando)
+			);
+			enviar_todos(ptd, broadcast);
+
+			//verificar se h√° novo lider
+			DWORD novo_lider = getIdLider(ptd);
+
+			if (novo_lider != ptd->id_lider_atual) {
+				MENSAGEM m_lider;
+				m_lider.tipo = COMANDO;
+				_stprintf_s(m_lider.comando, TAM, _T("O jogador %s passou para a frente com %d pontos!"),
+					ptd->players[novo_lider].name,
+					ptd->players[novo_lider].points
+				);
+				enviar_todos(ptd, m_lider);
+
+				ptd->id_lider_atual = novo_lider;
+			}
 		}
 		else {
-			_tprintf(_T("[ARBITRO] Palavra inv·lida: %s\n"), msg.comando);
+			_tprintf(_T("[ARBITRO] Palavra inv√°lida: %s\n"), msg.comando);
 
 			WaitForSingleObject(ptd->hMutex, INFINITE);
 			td.players[myPos].points -= (_tcslen(msg.comando) / 2.0);
 			ReleaseMutex(ptd->hMutex);
 
-			_stprintf_s(resposta.comando, TAM, _T("Palavra inv·lida! -%.1f pontos."), (_tcslen(msg.comando) / 2.0));
+			_stprintf_s(resposta.comando, TAM, _T("Palavra inv√°lida! -%.1f pontos."), (_tcslen(msg.comando) / 2.0));
 		}
 		break;
 		// ver se existe no dicionario
 		// ver se as letras todas fazem parte das letras da shared memory
-		// ver se as letras da palavra s„o menores do que 
+		// ver se as letras da palavra s√£o menores do que 
 		_tprintf_s(_T(" palavra %s\n"), msg.comando);
 		break;
 	case COMANDO:
@@ -313,6 +337,8 @@ BOOL isUserValid(MENSAGEM msg, TDATA td) {
 
 
 DWORD WINAPI letras(LPVOID data) {
+	_tprintf_s(_T("[LETRAS] LETRAS\n"));
+
 	TDATA* ptd = (TDATA*)data;
 	TDATA td;
 	DWORD i;
@@ -330,7 +356,7 @@ DWORD WINAPI letras(LPVOID data) {
 	);
 
 	if (hMemoPart == NULL) {
-		_tprintf(TEXT("Erro ao abrir memÛria partilhada (%d).\n"), GetLastError());
+		_tprintf(TEXT("Erro ao abrir mem√≥ria partilhada (%d).\n"), GetLastError());
 		return 1;
 	}
 
@@ -342,7 +368,7 @@ DWORD WINAPI letras(LPVOID data) {
 	);
 
 	if (memoria == NULL) {
-		_tprintf(TEXT("Erro ao mapear memÛria (%d).\n"), GetLastError());
+		_tprintf(TEXT("Erro ao mapear mem√≥ria (%d).\n"), GetLastError());
 		CloseHandle(hMemoPart);
 		return 1;
 	}
@@ -415,7 +441,7 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 	do {
 		ZeroMemory(&ov, sizeof(OVERLAPPED));
 		ov.hEvent = hEv;
-		//ANTEs da operaÁao 
+		//ANTEs da opera√ßao 
 		ret = ReadFile(ptd->players[myPos].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
 		if (!ret && GetLastError() != ERROR_IO_PENDING) {
 			_tprintf_s(_T("[ERROR READ] %d (%d bytes)... (ReadFile)\n"), ret, n);
@@ -565,7 +591,7 @@ void getRegistryValues(int* maxletras, int* ritmo) {
 	);
 
 	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("Chave n„o encontrada. A criar...\n"));
+		_tprintf(_T("Chave n√£o encontrada. A criar...\n"));
 
 		res = RegCreateKeyEx(
 			HKEY_CURRENT_USER,
@@ -591,7 +617,7 @@ void getRegistryValues(int* maxletras, int* ritmo) {
 	tam = sizeof(DWORD);
 	res = RegQueryValueEx(hKey, _T("MAXLETRAS"), NULL, &tipo, (LPBYTE)&valMaxLetras, &tam);
 	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("MAXLETRAS n„o existe, a criar com valor %D.\n"), DEFAULT_LETRAS);
+		_tprintf(_T("MAXLETRAS n√£o existe, a criar com valor %D.\n"), DEFAULT_LETRAS);
 		valMaxLetras = DEFAULT_LETRAS;
 		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
 	}
@@ -606,7 +632,7 @@ void getRegistryValues(int* maxletras, int* ritmo) {
 	}
 	res = RegQueryValueEx(hKey, _T("RITMO"), NULL, &tipo, (LPBYTE)&valRitmo, &tam);
 	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("RITMO n„o existe, a criar com valor %d.\n"), DEFAULT_RITMO);
+		_tprintf(_T("RITMO n√£o existe, a criar com valor %d.\n"), DEFAULT_RITMO);
 		valRitmo = DEFAULT_RITMO;
 		RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
 	}
@@ -629,12 +655,12 @@ BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada
 	BOOL usada[MAX_LETRAS] = { FALSE };
 	int i, j, len_palavra = _tcslen(palavra);
 
-	// Copiar letras visÌveis (para manipular localmente)
+	// Copiar letras vis√≠veis (para manipular localmente)
 	for (i = 0; i < memoria_partilhada->num_letras; i++) {
 		letras_visiveis[i] = memoria_partilhada->letras[i];
 	}
 
-	// Verificar se todas as letras da palavra est„o nas letras visÌveis (e marcar posiÁıes)
+	// Verificar se todas as letras da palavra est√£o nas letras vis√≠veis (e marcar posi√ß√µes)
 	for (i = 0; i < len_palavra; i++) {
 		TCHAR c = _totupper(palavra[i]);
 		BOOL encontrada = FALSE;
@@ -642,18 +668,18 @@ BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada
 		for (j = 0; j < memoria_partilhada->num_letras; j++) {
 			if (!usada[j] && letras_visiveis[j] == c) {
 				usada[j] = TRUE;
-				letras_usadas[i] = j; // regista a posiÁ„o usada
+				letras_usadas[i] = j; // regista a posi√ß√£o usada
 				encontrada = TRUE;
 				break;
 			}
 		}
 
 		if (!encontrada) {
-			return FALSE; // letra n„o encontrada suficientes vezes
+			return FALSE; // letra n√£o encontrada suficientes vezes
 		}
 	}
 
-	// Verificar se palavra est· no dicion·rio
+	// Verificar se palavra est√° no dicion√°rio
 	BOOL in_dicionario = FALSE;
 	for (i = 0; i < NUM_PALAVRAS; i++) {
 		if (_tcsicmp(DICIONARIO[i], palavra) == 0) {
@@ -665,6 +691,21 @@ BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada
 	return in_dicionario;
 }
 
+
+DWORD getIdLider(TDATA* ptd) {
+	DWORD i, id_lider = -1;
+	int max_pontos = -9999;
+
+	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+		if (ptd->players[i].hPipe != NULL && _tcscmp(ptd->players[i].name, _T("")) != 0) {
+			if ((int)ptd->players[i].points > max_pontos) {
+				max_pontos = (int)ptd->players[i].points;
+				id_lider = i;
+			}
+		}
+	}
+	return id_lider;
+}
 
 int _tmain(int argc, TCHAR* argv[]) {
 
@@ -689,7 +730,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	TCHAR* letras_jogo = (TCHAR*)malloc(max_letras * sizeof(TCHAR));
 	
 	if (letras_jogo == NULL) {
-		_tprintf(_T("Erro a alocar memÛria!\n"));
+		_tprintf(_T("Erro a alocar mem√≥ria!\n"));
 		return 1;
 	}
 	for (int i = 0; i < max_letras; i++) {
@@ -702,7 +743,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	);
 
 	if (hMemoPart == NULL) {
-		_tprintf(_T("Erro ao criar a memÛria partilhada (%d).\n"), GetLastError());
+		_tprintf(_T("Erro ao criar a mem√≥ria partilhada (%d).\n"), GetLastError());
 		return 1;
 	}
 
@@ -733,7 +774,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 	td.hMutex = NULL;
 	td.max_letras = max_letras;
 	td.id_letra = 0;
-	td.memoriaPartilhada = memoria;
+	td.memoria_partilhada = memoria;
+	td.id_lider_atual = -1;
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		td.players[i].hPipe = NULL;
 		_tcscpy_s(td.players[i].name, TAM_USERNAME, _T("NO_USER"));
@@ -747,7 +789,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	// CRiar thread
 	do {
 
-		_tprintf_s(_T("[ESCRITOR] Criar uma cÛpia do pipe '%s' ... (CreateNamedPipe)\n"),
+		_tprintf_s(_T("[ESCRITOR] Criar uma c√≥pia do pipe '%s' ... (CreateNamedPipe)\n"),
 			PIPE_NAME);
 		hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_WAIT
 			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(MENSAGEM), sizeof(MENSAGEM),
@@ -757,9 +799,9 @@ int _tmain(int argc, TCHAR* argv[]) {
 			exit(-1);
 		}
 
-		_tprintf_s(_T("[ARBITRO] Esperar ligaÁ„o de um jogador... (ConnectNamedPipe)\n"));
+		_tprintf_s(_T("[ARBITRO] Esperar liga√ß√£o de um jogador... (ConnectNamedPipe)\n"));
 		if (!ConnectNamedPipe(hPipe, NULL)) {
-			_tprintf_s(_T("[ERRO] LigaÁ„o ao leitor! (ConnectNamedPipe\n"));
+			_tprintf_s(_T("[ERRO] Liga√ß√£o ao leitor! (ConnectNamedPipe\n"));
 			exit(-1);
 		}
 
@@ -775,8 +817,10 @@ int _tmain(int argc, TCHAR* argv[]) {
 		
 
 		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)&td, 0, NULL);
-		td.hThreadLetras = CreateThread(NULL, 0, letras, (LPVOID)&td, 0, NULL);
-		SuspendThread(td.hThreadLetras);
+		if (td.hThreadLetras == NULL) {
+			td.hThreadLetras = CreateThread(NULL, 0, letras, (LPVOID)&td, 0, NULL);
+			SuspendThread(td.hThreadLetras);
+		}
 
 	} while (td.continua);
 
