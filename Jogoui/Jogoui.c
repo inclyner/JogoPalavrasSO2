@@ -155,13 +155,13 @@ int _tmain(int argc, TCHAR* argv[]) {
     #endif
         
     //verifica a existencia do pipe (verifica se o arbitro está a correr)
-    HANDLE hPipe = esperarPipeServidor(10, 1000); // tenta 10 vezes, com 1s entre cada
-
+   // HANDLE hPipe = esperarPipeServidor(10, 1000); // tenta 10 vezes, com 1s entre cada
+    /*
     if (hPipe == NULL) {
         _tprintf(_T("[ERRO] Não foi possível ligar ao árbitro.\n"));
         exit(EXIT_FAILURE);
     }
-
+    */
 
     if (argc != 2) {
         _tprintf(_T("[ERROR] Syntax: jogoui [username] \n"));
