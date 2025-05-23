@@ -1,44 +1,69 @@
-// Painel.c : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 #include <windows.h>
 #include <tchar.h>
-#include <io.h>
-#include <fcntl.h>
-#include <stdio.h>
 
-#define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
+LRESULT CALLBACK trataEventos(HWND, UINT, WPARAM, LPARAM);
 
+TCHAR szProgName[] = TEXT("Base");
 
-int _tmain(int argc, TCHAR* argv[]) {
-	#ifdef UNICODE
-		_setmode(_fileno(stdin), _O_WTEXT);
-		_setmode(_fileno(stdout), _O_WTEXT);
-		_setmode(_fileno(stderr), _O_WTEXT);
-	#endif
+int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPTSTR lpCmdLine, int nCmdShow) {
+    HWND hWnd;       
+    MSG lpMsg;          
+    WNDCLASSEX wcApp;   
 
-
-
-    //TODO verificar a existencia do named pipe, se não existir fechar programa
-    /*
-    do {
-
-        hPipe = CreateFile(PIPE_NAME,
-            GENERIC_READ | GENERIC_WRITE,  // Acesso de Leitura e Escrita (read/write)
-            0,                             // Sem “sharing”
-            NULL,                          // Atributos de Segurança
-            OPEN_EXISTING,                 // O Pipe já tem de estar criado
-            0,                             // Atributos e Flags
-            NULL);                         // Ficheiro Template
-
-        if (hPipe != INVALID_HANDLE_VALUE) { //quando existe pipe saimos do loop
-            break;
-        }
+    wcApp.cbSize = sizeof(WNDCLASSEX); 
+    wcApp.hInstance = hInst;  
+    wcApp.lpszClassName = szProgName; 
+    wcApp.lpfnWndProc = trataEventos; 
+    wcApp.style = CS_HREDRAW | CS_VREDRAW;  
+    wcApp.hIcon = LoadIcon(NULL, IDI_APPLICATION);  
+    wcApp.hIconSm = LoadIcon(NULL, IDI_INFORMATION); 
+    wcApp.hCursor = LoadCursor(NULL, IDC_ARROW);  
+    wcApp.lpszMenuName = NULL;  
+    wcApp.cbClsExtra = 0; 
+    wcApp.cbWndExtra = 0; 
+    wcApp.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);  
+  
 
 
-        _tprintf(_T("A aguardar o servidor...\n"));
-        Sleep(1000);
-    } while (1);
-    */
+    if (!RegisterClassEx(&wcApp))
+        return(0);
 
+    hWnd = CreateWindow(
+        szProgName,  
+        TEXT("Exemplo de Janela Principal em C"),  
+        WS_OVERLAPPEDWINDOW,	
+        CW_USEDEFAULT,  
+        CW_USEDEFAULT,  
+        CW_USEDEFAULT,  
+        CW_USEDEFAULT,  
+        (HWND)HWND_DESKTOP,	
+      
+        (HMENU)NULL,  
+        (HINSTANCE)hInst, 
+     
+        0);  
+
+    ShowWindow(hWnd, nCmdShow); 
+
+    UpdateWindow(hWnd);  
+ 
+    while (GetMessage(&lpMsg, NULL, 0, 0) > 0) {
+        TranslateMessage(&lpMsg); 
+        DispatchMessage(&lpMsg);  
+
+    }
+
+    return (int)lpMsg.wParam;  
+}
+
+
+LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lParam) {
+    switch (messg) {
+    case WM_DESTROY:	    
+        PostQuitMessage(0);  	
+        break;
+    default:
+        return DefWindowProc(hWnd, messg, wParam, lParam);
+    }
+    return 0;
 }
