@@ -58,7 +58,16 @@ void EliminarPlayer(TDATA* ptd, DWORD id)
 	ptd->players[id].hPipe = NULL;
 	_tcscpy_s(ptd->players[id].name, TAM_USERNAME, _T(""));
 	ptd->n_users--;
+	_tprintf_s(_T("[ELIMINAR PLAYER] O jogador (id=%d) %s vai sair. n_users=%d\n"), id, ptd->players[id].name, ptd->n_users);
 	ptd->next_id = id;
+
+	//pausar jogo se restar apenas um jogador
+	if (ptd->n_users < 2 && ptd->isGameOn) {
+		_tprintf_s(_T("[ARBITRO] Só resta 1 jogador. A pausar jogo.\n"));
+		ptd->isGameOn = FALSE;
+		SuspendThread(ptd->hThreadLetras);
+	}
+
 	ReleaseMutex(ptd->hMutex);
 }
 
@@ -139,7 +148,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 			if (id != -1) {
 				_tprintf(_T("TODO excluir username\n"));
 				WaitForSingleObject(ptd->hMutex, INFINITE);
-				//EliminarPlayer(ptd, id);
+				EliminarPlayer(ptd, id);
 				ReleaseMutex(ptd->hMutex);
 				//_tcscpy_s(resposta.comando, TAM, _T(":sair"));
 			} else {
