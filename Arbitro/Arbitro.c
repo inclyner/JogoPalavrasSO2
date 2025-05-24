@@ -164,6 +164,22 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 		else {
 			_tprintf(_T("inciarbot %s \n"), token);
 
+			TCHAR cmdLine[100];
+			_stprintf_s(cmdLine, 100, _T("Bot.exe %s"), token);
+
+			STARTUPINFO si = { sizeof(si) };
+			PROCESS_INFORMATION pi;
+
+			if (CreateProcess(NULL, cmdLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+				_tprintf(_T("[ARBITRO] Bot '%s' iniciado.\n"), token);
+				CloseHandle(pi.hThread);
+				CloseHandle(pi.hProcess);
+			}
+			else {
+				_tprintf(_T("[ERRO] Falha ao iniciar Bot: %d\n"), GetLastError());
+			}
+
+
 		}
 	}
 	else if (_tcscmp(token, _T("acelerar")) == 0) {

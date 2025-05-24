@@ -74,10 +74,8 @@ DWORD WINAPI recebMsg(LPVOID data) {
     } while (_tcsicmp(msg.comando, _T(":sair")) || id < 0 || isGameOn);
     _tprintf(_T("Thread recebeMsg a TERMINAR.\n"));
     _tprintf(_T("[ARBITRO] Foste excluído. A terminar...\n"));
-    
     CloseHandle(hEv);
     ExitThread(0);
-    ExitProcess(0); // termina tudo imediatamente
 }
 
 MENSAGEM consola_jogoui(MENSAGEM msg) {
