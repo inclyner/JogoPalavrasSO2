@@ -24,7 +24,7 @@ typedef struct {
 
 typedef struct {
 	TCHAR name[TAM_USERNAME];
-	DWORD points;
+	float points;
 }PLAYER_MP;
 
 typedef struct {

@@ -54,6 +54,10 @@ DWORD WINAPI recebMsg(LPVOID data) {
 
         _tprintf_s(_T("[recebMsg] Recebi %s (%d bytes)\n"), msg.comando, n);
         
+        if (_tcsicmp(msg.comando, _T("-1")) == 0) {
+            _tprintf_s(_T("[ERROR] User invalido"));
+            isGameOn = FALSE; // terminar o jogo
+        }
         switch (msg.tipo){
         case USERNAME:
             _stscanf_s(msg.comando, _T("%d"), &id);

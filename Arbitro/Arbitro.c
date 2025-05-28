@@ -13,7 +13,7 @@ const TCHAR* DICIONARIO[] = {
 	_T("CARRO"), _T("FACA"), _T("PATO"), _T("PEIXE"), _T("CHAVE"),
 	_T("BANCO"), _T("CARTA"), _T("FAROL"), _T("LATA"), _T("FITA"),
 	_T("VIDRO"), _T("TECLA"), _T("JANELA"), _T("CADEIRA"), _T("CAMA"),
-	_T("TINHA"), _T("BICHO"), _T("MANTO"), _T("FUMO"), _T("TROCO")
+	_T("TINHA"), _T("BICHO"), _T("MANTO"), _T("FUMO"), _T("TROCO"),_T("A"),_T("B"),_T("C"),_T("D"),_T("E"),_T("F"),_T("G"),_T("H"),_T("I"),_T("J"),_T("K"),_T("L"),_T("M"),_T("N"),_T("O"),_T("P"),_T("Q"),_T("R"),_T("S"),_T("T"),_T("U"),_T("V"),_T("W"),_T("X"),_T("Y"),_T("Z")
 };
 const int NUM_PALAVRAS = sizeof(DICIONARIO) / sizeof(DICIONARIO[0]);
 
@@ -133,7 +133,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 		_tprintf(_T("Lista de jogadores \n"));
 		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 			if (td.players[i].hPipe != NULL) {
-				_tprintf(_T("Nome: %s \t | Pontos: %d\n"), td.players[i].name, td.players[i].points);
+				_tprintf(_T("Nome: %s \t | Pontos: %.1f\n"), td.players[i].name, td.players[i].points);
 			}
 		}
 	}
@@ -246,8 +246,12 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 		else {
 			_stprintf_s(resposta.comando, TAM, _T("%d"), -1);
 			_tprintf_s(_T("O jogador %s já existe.\n"), msg.comando);
-			// fecha pipe do jogador
-			// quando o jogoui sabe que deve fechar a conexão não fecha
+			// fecha pipe do jogado
+			// encerra a ligação e remove o jogador diretamente
+			//EliminarPlayer(ptd, myPos);
+
+			// termina a thread chamadora (atende_cliente) com *ativo = FALSE
+			*ativo = FALSE;
 			/*WaitForSingleObject(ptd->hMutex, INFINITE);
 			ptd->players[myPos].hPipe = NULL;  // desassocia o pipe
 			_tcscpy_s(ptd->players[myPos].name, TAM_USERNAME, _T(""));  // limpa o nome
@@ -268,7 +272,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 			_tprintf(_T("[ARBITRO] Palavra válida: %s\n"), msg.comando);
 
 			WaitForSingleObject(ptd->hMutex, INFINITE);
-			td.players[myPos].points += _tcslen(msg.comando);
+			ptd->players[myPos].points += _tcslen(msg.comando);
 			_tcscpy_s(ptd->memoria_partilhada->ultima_palavra, MAX_LETRAS, msg.comando);
 
 			// Remover letras usadas
@@ -277,11 +281,11 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 			}
 			ReleaseMutex(ptd->hMutex);
 
-			_stprintf_s(resposta.comando, TAM, _T("Palavra válida! +%d pontos."), _tcslen(msg.comando));
+			_stprintf_s(resposta.comando, TAM, _T("Palavra válida! +%.1f pontos."), _tcslen(msg.comando));
 			//anunciar que jogador x acertou palavra y e ganhou z pontos
 			MENSAGEM broadcast;
 			broadcast.tipo = COMANDO; 
-			_stprintf_s(broadcast.comando, TAM, _T("%s acertou: %s (+%d pontos)"),
+			_stprintf_s(broadcast.comando, TAM, _T("%s acertou: %s (+%.1f pontos)"),
 				td.players[myPos].name,
 				msg.comando,
 				_tcslen(msg.comando)
@@ -294,7 +298,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 			if (novo_lider != ptd->id_lider_atual) {
 				MENSAGEM m_lider;
 				m_lider.tipo = COMANDO;
-				_stprintf_s(m_lider.comando, TAM, _T("O jogador %s passou para a frente com %d pontos!"),
+				_stprintf_s(m_lider.comando, TAM, _T("O jogador %s passou para a frente com %.1f pontos!"),
 					ptd->players[novo_lider].name,
 					ptd->players[novo_lider].points
 				);
@@ -307,7 +311,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 			_tprintf(_T("[ARBITRO] Palavra inválida: %s\n"), msg.comando);
 
 			WaitForSingleObject(ptd->hMutex, INFINITE);
-			td.players[myPos].points -= (_tcslen(msg.comando) / 2.0);
+			ptd->players[myPos].points -= (_tcslen(msg.comando) / 2.0);
 			ReleaseMutex(ptd->hMutex);
 
 			_stprintf_s(resposta.comando, TAM, _T("Palavra inválida! -%.1f pontos."), (_tcslen(msg.comando) / 2.0));
@@ -322,8 +326,8 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
 		resposta.tipo = COMANDO;
 		_tprintf_s(_T(" comando %s\n"), msg.comando);
 		if (_tcsicmp(msg.comando, _T(":pont")) == 0) {
-			_stprintf_s(resposta.comando, TAM, _T("Pontos: %d\n"),td.players[myPos].points); 
-			_tprintf_s(_T("pontos %d\n"), td.players[myPos].points);
+			_stprintf_s(resposta.comando, TAM, _T("Pontos: %.1f\n"),td.players[myPos].points); 
+			_tprintf_s(_T("pontos %.1f\n"), td.players[myPos].points);
 		}
 		else if (_tcsicmp(resposta.comando, _T(":jogs")) == 0) {
 			_stprintf_s(resposta.comando, TAM, _T("\nLista de Jogadores: \n"));
@@ -635,14 +639,13 @@ void getRegistryValues(int* maxletras, int* ritmo) {
 			return 1;
 		}
 
-		//RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
-		//RegSetValueEx(hKey, _T("RITMO"), 0, REG_DWORD, (const BYTE*)&valRitmo, sizeof(DWORD));
+		
 	}
 
 	tam = sizeof(DWORD);
 	res = RegQueryValueEx(hKey, _T("MAXLETRAS"), NULL, &tipo, (LPBYTE)&valMaxLetras, &tam);
 	if (res != ERROR_SUCCESS) {
-		_tprintf(_T("MAXLETRAS não existe, a criar com valor %D.\n"), DEFAULT_LETRAS);
+		_tprintf(_T("MAXLETRAS não existe, a criar com valor %d.\n"), DEFAULT_LETRAS);
 		valMaxLetras = DEFAULT_LETRAS;
 		RegSetValueEx(hKey, _T("MAXLETRAS"), 0, REG_DWORD, (const BYTE*)&valMaxLetras, sizeof(DWORD));
 	}
@@ -679,6 +682,7 @@ BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada
 	TCHAR letras_visiveis[MAX_LETRAS];
 	BOOL usada[MAX_LETRAS] = { FALSE };
 	int i, j, len_palavra = _tcslen(palavra);
+	TCHAR palavra_upper[MAX_LETRAS];
 
 	// Copiar letras visíveis (para manipular localmente)
 	for (i = 0; i < memoria_partilhada->num_letras; i++) {
@@ -688,6 +692,7 @@ BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada
 	// Verificar se todas as letras da palavra estão nas letras visíveis (e marcar posições)
 	for (i = 0; i < len_palavra; i++) {
 		TCHAR c = _totupper(palavra[i]);
+		palavra_upper[i] = c;
 		BOOL encontrada = FALSE;
 
 		for (j = 0; j < memoria_partilhada->num_letras; j++) {
@@ -702,12 +707,14 @@ BOOL validarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria_partilhada
 		if (!encontrada) {
 			return FALSE; // letra não encontrada suficientes vezes
 		}
+
 	}
+	palavra_upper[len_palavra] = _T('\0');
 
 	// Verificar se palavra está no dicionário
 	BOOL in_dicionario = FALSE;
 	for (i = 0; i < NUM_PALAVRAS; i++) {
-		if (_tcsicmp(DICIONARIO[i], palavra) == 0) {
+		if (_tcscmp(DICIONARIO[i], palavra_upper) == 0) {
 			in_dicionario = TRUE;
 			break;
 		}
@@ -733,7 +740,11 @@ DWORD getIdLider(TDATA* ptd) {
 }
 
 int _tmain(int argc, TCHAR* argv[]) {
-
+#ifdef UNICODE
+	_setmode(_fileno(stdin), _O_WTEXT);
+	_setmode(_fileno(stdout), _O_WTEXT);
+	_setmode(_fileno(stderr), _O_WTEXT);
+#endif
 	DWORD i;
 	HANDLE hPipe;
 	TCHAR buf[256];
@@ -741,12 +752,12 @@ int _tmain(int argc, TCHAR* argv[]) {
 	BOOL isGameOn;
 	HANDLE hMemoPart;
 	HANDLE hThreadLetras, hThreadDistribui;
+	HANDLE hMutexGlobal = CreateMutex(NULL, TRUE, _T("Global\\MutexUnico_ArbitroSO2"));
+	if (hMutexGlobal == NULL || GetLastError() == ERROR_ALREADY_EXISTS) {
+		_tprintf(_T("[ERRO] Já existe uma instância do árbitro em execução.\n"));
+		return 1;
+	}
 
-#ifdef UNICODE
-	_setmode(_fileno(stdin), _O_WTEXT);
-	_setmode(_fileno(stdout), _O_WTEXT);
-	_setmode(_fileno(stderr), _O_WTEXT);
-#endif
 	srand((unsigned int)time(NULL));
 
 	DWORD max_letras, ritmo;
@@ -855,6 +866,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	CloseHandle(td.hMutex);
 	UnmapViewOfFile(memoria);
 	CloseHandle(hMemoPart);
+	CloseHandle(hMutexGlobal);
 
 	return 0;
 
