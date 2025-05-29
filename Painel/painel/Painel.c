@@ -107,7 +107,7 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPTSTR lpCmdLine, int
     wcApp.lpszMenuName = MAKEINTRESOURCE(IDR_MENU1);;
     wcApp.cbClsExtra = 0;
     wcApp.cbWndExtra = sizeof(TDATA *);
-    wcApp.hbrBackground = CreateSolidBrush(RGB(100, 255, 70));
+    wcApp.hbrBackground = CreateSolidBrush(RGB(190, 200, 210));
 
     if (!RegisterClassEx(&wcApp))
         return(0);
@@ -229,6 +229,7 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         td = *ptd;
         ReleaseMutex(ptd->hMutex);
 
+		SetBkMode(hdc, TRANSPARENT); // retira os quadrados brancos de trás dos textos
 
         // __________TITULO-------------
         TextOut(hdc, 20, 20, _T("Jogo das Palavras"), sizeof(TCHAR) * 9);
