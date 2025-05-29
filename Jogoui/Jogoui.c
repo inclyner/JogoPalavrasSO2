@@ -24,10 +24,17 @@ typedef struct {
     MENSAGEM_TYPE tipo;
 } MENSAGEM;
 
+typedef struct {
+    HANDLE hPipe;
+    BOOL* running;
+} THREAD_DATA;
+
 
 DWORD WINAPI recebMsg(LPVOID data) {
+    THREAD_DATA* tData = (THREAD_DATA*)data;
+    HANDLE hPipe = tData->hPipe;
+    BOOL* running = tData->running;
     MENSAGEM msg = {NULL,NULL};
-    HANDLE hPipe = (HANDLE)data;
     BOOL ret, isGameOn = TRUE;
     DWORD n, id = -1;
     OVERLAPPED ov;
@@ -57,6 +64,8 @@ DWORD WINAPI recebMsg(LPVOID data) {
             else {
                 _tprintf_s(_T("[ERROR] User invalido"));
                 isGameOn = FALSE;
+				running = FALSE;
+
             }
             break;
          
@@ -70,6 +79,7 @@ DWORD WINAPI recebMsg(LPVOID data) {
     } while (_tcsicmp(msg.comando, _T(":sair")) && _tcsicmp(msg.comando, _T("-1")));
     _tprintf(_T("Thread recebeMsg a TERMINAR.\n"));
     _tprintf(_T("[ARBITRO] Foste excluído. A terminar...\n"));
+	running = FALSE;
     // todo melhorar mensagem de saida
     CloseHandle(hEv);
     ExitThread(0);
@@ -112,6 +122,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg) {
 
 
 int _tmain(int argc, TCHAR* argv[]) {
+    BOOL running = TRUE;
     HANDLE hPipe;
     BOOL ret;
     DWORD n = 0;
@@ -166,8 +177,10 @@ int _tmain(int argc, TCHAR* argv[]) {
     SetNamedPipeHandleState(hPipe, &modo, NULL, NULL);
 
     //CRIAR THREAD MSG
-
-    HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
+    THREAD_DATA* tData = malloc(sizeof(THREAD_DATA));
+    tData->hPipe = hPipe;
+    tData->running = &running;
+    HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)tData, 0, NULL);
 
 
     if (hThread == NULL) {
@@ -175,34 +188,36 @@ int _tmain(int argc, TCHAR* argv[]) {
         return 1;
     }
         
-    do {
+    while (running) {
         _tprintf_s(_T("[Leitor] Pedido: "));
-        _fgetts(msg.comando, TAM, stdin);
-        if(_tcslen(msg.comando) > 0)
+        if (_fgetts(msg.comando, TAM, stdin) == NULL) break;
+
+        if (_tcslen(msg.comando) > 0)
             msg.comando[_tcslen(msg.comando) - 1] = _T('\0');
 
         resposta = consola_jogoui(msg);
-  
+
         if (resposta.tipo > ERRO) {
             ZeroMemory(&ov, sizeof(OVERLAPPED));
             ov.hEvent = hEv;
             _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), resposta.comando, n);
 
-            ret = WriteFile(hPipe, &resposta, sizeof(MENSAGEM), &n, &ov); // muder ov
-            if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+            ret = WriteFile(hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
+            if (!ret && GetLastError() != ERROR_IO_PENDING) {
                 _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), resposta.comando, n);
                 break;
             }
             if (GetLastError() == ERROR_IO_PENDING) {
-                WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-                GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
-                    
+                WaitForSingleObject(hEv, INFINITE);
+                GetOverlappedResult(hPipe, &ov, &n, FALSE);
             }
 
             _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, resposta.comando);
 
+            if (_tcsicmp(resposta.comando, _T(":sair")) == 0)
+                running = FALSE;
         }
-    } while (_tcsicmp(resposta.comando, _T(":sair")));
+    }
 
     WaitForSingleObject(hThread, INFINITE);
     _tprintf(_T("Thread TERMINOU.\n"));
