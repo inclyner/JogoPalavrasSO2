@@ -38,6 +38,14 @@ LRESULT CALLBACK trataEventos(HWND, UINT, WPARAM, LPARAM);
 
 TCHAR szProgName[] = TEXT("Base");
 
+int comparaPontuacoes(const void* a, const void* b) {
+    const PLAYER_MP* pa = (const PLAYER_MP*)a;
+    const PLAYER_MP* pb = (const PLAYER_MP*)b;
+
+    if (pb->points > pa->points) return 1;
+    if (pb->points < pa->points) return -1;
+    return 0;
+}
 
 DWORD WINAPI pintor(LPVOID data) {
     TDATA* ptd = (TDATA*)data;
@@ -265,31 +273,28 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         pt.y += 5;
         TCHAR linha[100];
         // Jogadores
-        j = 0;
-        for (i = 0; i < MAX_CONCURRENT_USERS && j < td.max_jogadores; i++) {
+        PLAYER_MP jogadoresOrdenados[MAX_CONCURRENT_USERS];
+        DWORD count = 0;
+
+        for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
             if (_tcscmp(td.memoria->players[i].name, _T("")) != 0) {
-                _stprintf_s(linha, 100, _T("%s"), td.memoria->players[i].name);
-                TextOut(hdc, pt.x - largura + 10, pt.y + j * 17, linha, _tcslen(linha));
-                j++;
+                jogadoresOrdenados[count++] = td.memoria->players[i];
             }
         }
 
+        // Ordenar por pontuação decrescente
+        qsort(jogadoresOrdenados, count, sizeof(PLAYER_MP), comparaPontuacoes);
 
-        pt.x = (dim.right / 2) + 150;
-        TextOut(hdc, pt.x - largura, pt.y - 20, _T("Pontuações"), 10);
-        Rectangle(hdc, pt.x - largura, pt.y, pt.x + largura, pt.y + altura);
-        pt.y += 5;
+        // Mostrar nomes
+        for (j = 0; j < count && j < td.max_jogadores; j++) {
+            _stprintf_s(linha, 100, _T("%s"), jogadoresOrdenados[j].name);
+            TextOut(hdc, (dim.right / 2) - 150 - largura + 10, pt.y + j * 17, linha, _tcslen(linha));
+        }
 
-        // Pontos
-        pt.x = (dim.right / 2) + 150;
-        //pt.y -= j * 17; // reposicionar pt.y para alinhar com nomes
-        j = 0;
-        for (i = 0; i < MAX_CONCURRENT_USERS && j < td.max_jogadores; i++) {
-            if (_tcscmp(td.memoria->players[i].name, _T("")) != 0) {
-                _stprintf_s(linha, 100, _T("%.1f"), td.memoria->players[i].points);
-                TextOut(hdc, pt.x - largura + 10, pt.y + j * 17, linha, _tcslen(linha));
-                j++;
-            }
+        // Mostrar pontuações
+        for (j = 0; j < count && j < td.max_jogadores; j++) {
+            _stprintf_s(linha, 100, _T("%.1f"), jogadoresOrdenados[j].points);
+            TextOut(hdc, (dim.right / 2) + 150 - largura + 10, pt.y + j * 17, linha, _tcslen(linha));
         }
 
 
