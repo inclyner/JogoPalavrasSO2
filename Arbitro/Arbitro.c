@@ -158,10 +158,8 @@ MENSAGEM consola_arbitro(MENSAGEM msg, TDATA* ptd) {
 			_tprintf(_T("Comando inválido.\n"));
 		}
 		else {
-			_tprintf(_T("excluir %s \n"), token);
 			id = getPlayerByName(td, token);
 			if (id != -1) {
-				_tprintf(_T("TODO excluir username\n"));
 				WaitForSingleObject(ptd->hMutex, INFINITE);
 				EliminarPlayer(ptd, id);
 				ReleaseMutex(ptd->hMutex);
@@ -495,33 +493,6 @@ DWORD WINAPI atende_cliente(LPVOID data) {
 
 		_tprintf_s(_T("[ARBITRO] Resposta '%s' (%d bytes)... (WriteFile)\n"), resposta.comando, n);
 
-		//==============================//
-		// (Opcional) Broadcast a todos //
-		//==============================//
-		if (FALSE) {
-			WaitForSingleObject(ptd->hMutex, INFINITE);
-			td = *ptd;
-			ReleaseMutex(ptd->hMutex);
-
-			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-				if (td.players[i].hPipe != NULL) {
-					ZeroMemory(&ov, sizeof(OVERLAPPED));
-					ov.hEvent = hEv;
-
-					ret = WriteFile(td.players[i].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
-					if (!ret && GetLastError() != ERROR_IO_PENDING) {
-						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
-						break;
-					}
-					if (GetLastError() == ERROR_IO_PENDING) {
-						WaitForSingleObject(hEv, INFINITE);
-						GetOverlappedResult(td.players[i].hPipe, &ov, &n, FALSE);
-					}
-
-					_tprintf_s(_T("[ARBITRO ALL] Enviei %d bytes ao leitor... (i = %d)\n"), n, i);
-				}
-			}
-		}
 
 		nome_removido[TAM_USERNAME];
 		_tcscpy_s(nome_removido, TAM_USERNAME, ptd->players[myPos].name);  // <- garantir acesso direto à estrutura viva
@@ -568,26 +539,27 @@ DWORD WINAPI distribui(LPVOID data) {
 		// Enviar a todos os jogadores  //
 		//==============================//
 		if (resposta.tipo > ERRO) {
-			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-				if (td.players[i].hPipe != NULL) {
-					ZeroMemory(&ov, sizeof(OVERLAPPED));
-					ov.hEvent = hEv;
+			if (_tcscmp(msg.comando, _T("listar")) != 0) {
+				for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+					if (td.players[i].hPipe != NULL) {
+						ZeroMemory(&ov, sizeof(OVERLAPPED));
+						ov.hEvent = hEv;
 
-					ret = WriteFile(td.players[i].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
-					if (!ret && GetLastError() != ERROR_IO_PENDING) {
-						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
-						break;
-					}
-					if (GetLastError() == ERROR_IO_PENDING) {
-						WaitForSingleObject(hEv, INFINITE);
-						GetOverlappedResult(td.players[i].hPipe, &ov, &n, FALSE);
-					}
+						ret = WriteFile(td.players[i].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
+						if (!ret && GetLastError() != ERROR_IO_PENDING) {
+							_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
+							break;
+						}
+						if (GetLastError() == ERROR_IO_PENDING) {
+							WaitForSingleObject(hEv, INFINITE);
+							GetOverlappedResult(td.players[i].hPipe, &ov, &n, FALSE);
+						}
 
-					_tprintf_s(_T("[ESCRITOR] Enviei '%s' ao jogoui (i = %d)\n"), resposta.comando, i);
+						_tprintf_s(_T("[ESCRITOR] Enviei '%s' ao jogoui (i = %d)\n"), resposta.comando, i);
+					}
 				}
 			}
 		}
-
 	} while (_tcsicmp(msg.comando, _T("fim")));
 
 	//==============================//
