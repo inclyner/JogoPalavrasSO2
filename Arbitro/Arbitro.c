@@ -39,7 +39,6 @@ void travarRitmo(TDATA* ptd) {
 DWORD getPlayerByName(TDATA td,TCHAR token[]) {
 	DWORD i;
 	
-
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		if (_tcsicmp(td.players[i].name, token) == 0) {
 			return i;
@@ -54,11 +53,10 @@ void EliminarPlayer(TDATA* ptd, DWORD id)
 	DisconnectNamedPipe(ptd->players[id].hPipe);
 	CloseHandle(ptd->players[id].hPipe);
 	WaitForSingleObject(ptd->hMutex, INFINITE);
-	_tprintf_s(_T("[ARBITRO] O jogador (id=%d) %s vai sair.\n"), id, ptd->players[id].name);
+	_tprintf_s(_T("O jogador %s vai sair.\n"), ptd->players[id].name);
 	ptd->players[id].hPipe = NULL;
 	_tcscpy_s(ptd->players[id].name, TAM_USERNAME, _T(""));
 	ptd->n_users--;
-	_tprintf_s(_T("[ELIMINAR PLAYER] O jogador (id=%d) %s vai sair. n_users=%d\n"), id, ptd->players[id].name, ptd->n_users);
 	ptd->next_id = id;
 
 	//pausar jogo se restar apenas um jogador
@@ -69,10 +67,12 @@ void EliminarPlayer(TDATA* ptd, DWORD id)
 	}
 
 	ReleaseMutex(ptd->hMutex);
+
+	
 }
 
 
-void enviar_todos(TDATA* ptd, MENSAGEM msg) {
+void enviar_todos(TDATA* ptd, MENSAGEM msg, DWORD id) {
 	BOOL ret;
 	DWORD i, n;
 	TDATA td;
@@ -85,6 +85,9 @@ void enviar_todos(TDATA* ptd, MENSAGEM msg) {
 	ReleaseMutex(ptd->hMutex);
 
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+		if (id == i) {
+			break;
+		}
 		if (ptd->players[i].hPipe != NULL) {
 			//ANTES Da operacao 
 			ZeroMemory(&ov, sizeof(OVERLAPPED));
@@ -162,7 +165,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 			_tprintf(_T("Comando inválido.\n"));
 		}
 		else {
-			_tprintf(_T("inciarbot %s \n"), token);
+			_tprintf(_T("Um jogador %s juntou-se ao jogo através do bot. \n"), token);
 
 			TCHAR cmdLine[100];
 			_stprintf_s(cmdLine, 100, _T("Bot.exe %s"), token);
@@ -170,7 +173,7 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 			STARTUPINFO si = { sizeof(si) };
 			PROCESS_INFORMATION pi;
 
-			if (CreateProcess(NULL, cmdLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+			if (CreateProcess(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
 				_tprintf(_T("[ARBITRO] Bot '%s' iniciado.\n"), token);
 				CloseHandle(pi.hThread);
 				CloseHandle(pi.hProcess);
@@ -178,7 +181,6 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 			else {
 				_tprintf(_T("[ERRO] Falha ao iniciar Bot: %d\n"), GetLastError());
 			}
-
 
 		}
 	}
@@ -204,153 +206,131 @@ MENSAGEM consola_arbitro(MENSAGEM msg,TDATA *ptd) {
 }
 
 
-MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD *ativo) {
+MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD* ativo) {
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
-	MENSAGEM resposta;
-	TDATA td;
-	DWORD user_id = -1;
-	TCHAR aux[TAM_USERNAME + 5];
+	MENSAGEM resposta = { .tipo = ERRO };
+	MENSAGEM broadcast;
 	DWORD i;
+
 	WaitForSingleObject(ptd->hMutex, INFINITE);
-	td = *ptd;
+	TDATA td = *ptd;
 	ReleaseMutex(ptd->hMutex);
+
 	_tcscpy_s(resposta.comando, TAM, msg.comando);
-	resposta.tipo = ERRO;
 
 	switch (msg.tipo) {
 	case USERNAME:
 		_tprintf_s(_T("O jogador %s está a tentar entrar no jogo.\n"), msg.comando);
 
 		if (isUserValid(msg, td)) {
-			resposta.tipo = USERNAME;
 			WaitForSingleObject(ptd->hMutex, INFINITE);
-			_tprintf_s(_T("next_id %d\n"), ptd->next_id);
-			_stprintf_s(resposta.comando, TAM, _T("%d"), ptd->next_id); 
+
+			resposta.tipo = USERNAME;
+			_stprintf_s(resposta.comando, TAM, _T("%d"), ptd->next_id);
 			_tcscpy_s(ptd->players[ptd->next_id].name, TAM_USERNAME, msg.comando);
 			ptd->n_users++;
+
 			_tprintf_s(_T("n_users %d, name = %s\n"), ptd->n_users, ptd->players[ptd->next_id].name);
-			if (ptd->next_id + 1 == ptd->n_users) {
+
+			if (ptd->next_id + 1 == ptd->n_users)
 				ptd->next_id++;
-			}
-			else {
+			else
 				ptd->next_id = ptd->n_users;
-			}
+
 			if (!ptd->isGameOn && ptd->n_users == 2) {
 				ptd->isGameOn = TRUE;
 				ResumeThread(ptd->hThreadLetras);
 			}
 
 			ReleaseMutex(ptd->hMutex);
+
+			broadcast.tipo = COMANDO;
+			_stprintf_s(broadcast.comando, TAM, _T("Um jogador %s juntou-se ao jogo através do jogoui."),
+				msg.comando);
+			enviar_todos(ptd, broadcast,myPos);
 		}
 		else {
 			_stprintf_s(resposta.comando, TAM, _T("%d"), -1);
 			_tprintf_s(_T("O jogador %s já existe.\n"), msg.comando);
-			// fecha pipe do jogado
-			// encerra a ligação e remove o jogador diretamente
-			//EliminarPlayer(ptd, myPos);
-
-			// termina a thread chamadora (atende_cliente) com *ativo = FALSE
 			*ativo = FALSE;
-			/*WaitForSingleObject(ptd->hMutex, INFINITE);
-			ptd->players[myPos].hPipe = NULL;  // desassocia o pipe
-			_tcscpy_s(ptd->players[myPos].name, TAM_USERNAME, _T(""));  // limpa o nome
-			ReleaseMutex(ptd->hMutex);
-			*/
-		
 		}
-		
 		break;
-	case PALAVRA:
+
+	case PALAVRA: {
+		_tprintf_s(_T("O jogador %s indicou a palavra: %s\n"), td.players[myPos].name, msg.comando);
 		resposta.tipo = PALAVRA;
+
 		int letras_usadas[MAX_LETRAS];
 		BOOL palavra_valida = validarPalavra(msg.comando, ptd->memoria_partilhada, letras_usadas);
 
-		_tprintf_s(_T(" palavra %s\n"), msg.comando);
-
 		if (palavra_valida) {
-			_tprintf(_T("[ARBITRO] Palavra válida: %s\n"), msg.comando);
-
 			WaitForSingleObject(ptd->hMutex, INFINITE);
+
 			ptd->players[myPos].points += _tcslen(msg.comando);
 			_tcscpy_s(ptd->memoria_partilhada->ultima_palavra, MAX_LETRAS, msg.comando);
 
-			// Remover letras usadas
 			for (int i = 0; i < _tcslen(msg.comando); i++) {
 				ptd->memoria_partilhada->letras[letras_usadas[i]] = _T('_');
 			}
+
 			ReleaseMutex(ptd->hMutex);
 
-			_stprintf_s(resposta.comando, TAM, _T("Palavra válida! +%.1f pontos."), _tcslen(msg.comando));
-			//anunciar que jogador x acertou palavra y e ganhou z pontos
-			MENSAGEM broadcast;
-			broadcast.tipo = COMANDO; 
-			_stprintf_s(broadcast.comando, TAM, _T("%s acertou: %s (+%.1f pontos)"),
-				td.players[myPos].name,
-				msg.comando,
-				_tcslen(msg.comando)
-			);
-			enviar_todos(ptd, broadcast);
+			_stprintf_s(resposta.comando, TAM, _T("Palavra válida! +%.1f pontos."), (float)_tcslen(msg.comando));
 
-			//verificar se há novo lider
+			broadcast.tipo = COMANDO;
+			_stprintf_s(broadcast.comando, TAM, _T("O jogador %s adivinhou a palavra %s."),
+				td.players[myPos].name, msg.comando);
+			enviar_todos(ptd, broadcast,myPos);
+
 			DWORD novo_lider = getIdLider(ptd);
-
 			if (novo_lider != ptd->id_lider_atual) {
-				MENSAGEM m_lider;
-				m_lider.tipo = COMANDO;
+				MENSAGEM m_lider = { .tipo = COMANDO };
 				_stprintf_s(m_lider.comando, TAM, _T("O jogador %s passou para a frente com %.1f pontos!"),
-					ptd->players[novo_lider].name,
-					ptd->players[novo_lider].points
-				);
-				enviar_todos(ptd, m_lider);
-
+					ptd->players[novo_lider].name, ptd->players[novo_lider].points);
+				enviar_todos(ptd, m_lider,-1);
 				ptd->id_lider_atual = novo_lider;
 			}
 		}
 		else {
-			_tprintf(_T("[ARBITRO] Palavra inválida: %s\n"), msg.comando);
-
 			WaitForSingleObject(ptd->hMutex, INFINITE);
-			ptd->players[myPos].points -= (_tcslen(msg.comando) / 2.0);
+			ptd->players[myPos].points -= (_tcslen(msg.comando) / 2.0f);
 			ReleaseMutex(ptd->hMutex);
 
-			_stprintf_s(resposta.comando, TAM, _T("Palavra inválida! -%.1f pontos."), (_tcslen(msg.comando) / 2.0));
+			_stprintf_s(resposta.comando, TAM, _T("Palavra inválida! -%.1f pontos."), (_tcslen(msg.comando) / 2.0f));
 		}
 		break;
-		// ver se existe no dicionario
-		// ver se as letras todas fazem parte das letras da shared memory
-		// ver se as letras da palavra são menores do que 
-		_tprintf_s(_T(" palavra %s\n"), msg.comando);
-		break;
+	}
+
 	case COMANDO:
 		resposta.tipo = COMANDO;
-		_tprintf_s(_T(" comando %s\n"), msg.comando);
+
 		if (_tcsicmp(msg.comando, _T(":pont")) == 0) {
-			_stprintf_s(resposta.comando, TAM, _T("Pontos: %.1f\n"),td.players[myPos].points); 
-			_tprintf_s(_T("pontos %.1f\n"), td.players[myPos].points);
+			_stprintf_s(resposta.comando, TAM, _T("Pontos: %.1f\n"), td.players[myPos].points);
 		}
-		else if (_tcsicmp(resposta.comando, _T(":jogs")) == 0) {
-			_stprintf_s(resposta.comando, TAM, _T("\nLista de Jogadores: \n"));
+		else if (_tcsicmp(msg.comando, _T(":jogs")) == 0) {
+			_tcscpy_s(resposta.comando, TAM, _T("\nLista de Jogadores: \n"));
 			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-				if (td.players[i].hPipe != NULL && i != myPos) {
+				if (td.players[i].hPipe != NULL) {
+					TCHAR aux[TAM_USERNAME + 5];
 					_stprintf_s(aux, TAM_USERNAME + 5, _T("%s\n"), td.players[i].name);
 					_tcscat_s(resposta.comando, TAM, aux);
-					_tprintf_s(_T("nomes %s\n"), td.players[i].name);
 				}
 			}
-			_tprintf_s(_T("nomes %s\n"), resposta.comando);
 		}
-		else {
-			ativo = FALSE;
+		else if (_tcsicmp(msg.comando, _T(":sair")) == 0) {
+			*ativo = FALSE;
 		}
-		// se for :sair ele faz a logica fora desta funcao por causa de eliminar o player
 		break;
+
 	default:
 		_tprintf_s(_T("DEFAULT\n"));
 		break;
 	}
+
 	return resposta;
 }
+
 
 BOOL isUserValid(MENSAGEM msg, TDATA td) {
 	DWORD i;
@@ -366,193 +346,180 @@ BOOL isUserValid(MENSAGEM msg, TDATA td) {
 
 
 DWORD WINAPI letras(LPVOID data) {
-	_tprintf_s(_T("[LETRAS] LETRAS\n"));
+	_tprintf_s(_T("[LETRAS] Thread iniciada.\n"));
 
 	TDATA* ptd = (TDATA*)data;
-	TDATA td;
-	DWORD i;
-	HANDLE hMemoPart;
-	TCHAR letra;
-	DWORD pos;
-	BOOL livre;
-	MENSAGEM msg;
 	MEMORIA_PARTILHADA* memoria;
+	DWORD i, pos;
+	TCHAR letra;
+	MENSAGEM msg;
 
-	hMemoPart = OpenFileMapping(
-		FILE_MAP_ALL_ACCESS,
-		FALSE,
-		MEMORY_NAME
-	);
-
-	if (hMemoPart == NULL) {
+	HANDLE hMemoPart = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMORY_NAME);
+	if (!hMemoPart) {
 		_tprintf(TEXT("Erro ao abrir memória partilhada (%d).\n"), GetLastError());
 		return 1;
 	}
 
-	memoria = (LPTSTR)MapViewOfFile(
-		hMemoPart,
-		FILE_MAP_ALL_ACCESS,
-		0, 0,
-		sizeof(MEMORIA_PARTILHADA)
-	);
-
-	if (memoria == NULL) {
+	memoria = (MEMORIA_PARTILHADA*)MapViewOfFile(hMemoPart, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(MEMORIA_PARTILHADA));
+	if (!memoria) {
 		_tprintf(TEXT("Erro ao mapear memória (%d).\n"), GetLastError());
 		CloseHandle(hMemoPart);
 		return 1;
 	}
 
-	do{
+	while (ptd->isGameOn) {
 		WaitForSingleObject(ptd->hMutex, INFINITE);
-		td = *ptd;
+		DWORD ritmo = ptd->ritmo;
+		DWORD id_letra = ptd->id_letra;
 		ReleaseMutex(ptd->hMutex);
 
 		pos = -1;
-		livre = TRUE;
-		_tprintf_s(_T("letras:\t"));
 		for (i = 0; i < memoria->num_letras; i++) {
-			_tprintf_s(_T("  %c\t"), memoria->letras[i]);
-			if (livre) {
-				if (memoria->letras[i] == _T('_')) {
-					pos = i;
-					livre = FALSE;
-				}
+			if (memoria->letras[i] == _T('_')) {
+				pos = i;
+				break;
 			}
 		}
-		_tprintf_s(_T("\n"));
-		Sleep(td.ritmo * 1000);
+
 		letra = letraRandom();
-		
-		_tprintf(_T(" pos(%d) td.id(%d) max(%d).\n"), pos, td.id_letra, td.max_letras);
+
+		WaitForSingleObject(ptd->hMutex, INFINITE);
 		if (pos != -1) {
 			memoria->letras[pos] = letra;
-			td.id_letra = pos;
+			ptd->id_letra = pos;
 		}
 		else {
-			memoria->letras[td.id_letra] = letra;
-			WaitForSingleObject(ptd->hMutex, INFINITE);
-			if (td.id_letra >= memoria->num_letras - 1) {
-				ptd->id_letra = 0;
-			}else {
-				ptd->id_letra++;
-			}
-			ReleaseMutex(ptd->hMutex);
+			memoria->letras[ptd->id_letra] = letra;
+			ptd->id_letra = (ptd->id_letra + 1) % memoria->num_letras;
 		}
+		ReleaseMutex(ptd->hMutex);
+
+		msg.tipo = LETRAS; 
 		_stprintf_s(msg.comando, TAM, _T("%s"), memoria->letras);
+		enviar_todos(ptd, msg,-1);
 
-		enviar_todos(ptd,msg);
-		
-	} while (ptd->isGameOn);
+		Sleep(ritmo * 1000);
+	}
 
+	UnmapViewOfFile(memoria);
+	CloseHandle(hMemoPart);
 
+	return 0;
 }
 
 
 // nesta thread o arbitro vai receber os pedido neste caso as palavras ou os comandos 
 // e vai fazer fazer o que tem a fazer sobre os pontos e tudo mais 
 // e depois envia por exemplo os pontos ao user ou que ele pediu nos comandos
+
 DWORD WINAPI atende_cliente(LPVOID data) {
 	TDATA* ptd = (TDATA*)data;
 	MENSAGEM msg, resposta;
-	DWORD n;
+	DWORD n, i, myPos;
 	BOOL ret, ativo = TRUE;
-	DWORD i, myPos;
 	TDATA td;
+	MENSAGEM broadcast;
 
+	// Determinar a posição do jogador
 	WaitForSingleObject(ptd->hMutex, INFINITE);
 	myPos = ptd->next_id;
 	ReleaseMutex(ptd->hMutex);
 
-
-	//FORA CILCO...
 	OVERLAPPED ov;
-	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL); // Evento para I/O assíncrono
+
 	do {
+		//==============================//
+		// Ler mensagem do jogador      //
+		//==============================//
 		ZeroMemory(&ov, sizeof(OVERLAPPED));
 		ov.hEvent = hEv;
-		//ANTEs da operaçao 
+
 		ret = ReadFile(ptd->players[myPos].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
 		if (!ret && GetLastError() != ERROR_IO_PENDING) {
 			_tprintf_s(_T("[ERROR READ] %d (%d bytes)... (ReadFile)\n"), ret, n);
 			break;
 		}
 		if (GetLastError() == ERROR_IO_PENDING) {
-			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-			GetOverlappedResult(ptd->players[myPos].hPipe, &ov, &n, FALSE); // obter resultado da operacao
+			WaitForSingleObject(hEv, INFINITE);
+			GetOverlappedResult(ptd->players[myPos].hPipe, &ov, &n, FALSE);
 		}
-		// buf[n / sizeof(TCHAR)] = _T('\0');
 
-		_tprintf_s(_T("[ESCRITOR] Recebi '%s'(%d bytes) ...... (ReadFile)\n"), msg.comando, n);
-		// PROCESSAMENTO
-		
+		_tprintf_s(_T("[ESCRITOR] Recebi '%s' (%d bytes)... (ReadFile)\n"), msg.comando, n);
 
+		//==============================//
+		// Processar e responder        //
+		//==============================//
+		resposta = consola_jogoui(msg, ptd, myPos, &ativo);
 
-		
-		//ANTES DA OPERACAO 
-		
-		
-
-		resposta = consola_jogoui(msg,ptd,myPos,&ativo);
-		
-		// envia a resposta
 		ret = WriteFile(ptd->players[myPos].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
-		if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+		if (!ret && GetLastError() != ERROR_IO_PENDING) {
 			_tprintf_s(_T("[ERROR] Write failed code(%d)\n"), GetLastError());
-			
 			break;
 		}
 		if (GetLastError() == ERROR_IO_PENDING) {
-			WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-			GetOverlappedResult(ptd->players[myPos].hPipe, &ov, &n, FALSE); // obter resultado da operacao
+			WaitForSingleObject(hEv, INFINITE);
+			GetOverlappedResult(ptd->players[myPos].hPipe, &ov, &n, FALSE);
 		}
 
+		_tprintf_s(_T("[ARBITRO] Resposta '%s' (%d bytes)... (WriteFile)\n"), resposta.comando, n);
 
-		_tprintf_s(_T("[ARBITRO] Resposta '%s'(%d bytes) ... (WriteFile)\n"), resposta.comando, n);
-
-
-		if (FALSE) { // vai servir para enviar coisas a todos os users 
+		//==============================//
+		// (Opcional) Broadcast a todos //
+		//==============================//
+		if (FALSE) {
 			WaitForSingleObject(ptd->hMutex, INFINITE);
 			td = *ptd;
 			ReleaseMutex(ptd->hMutex);
 
 			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-				if (ptd->players[i].hPipe != NULL) {
-					//ANTES Da operacao 
+				if (td.players[i].hPipe != NULL) {
 					ZeroMemory(&ov, sizeof(OVERLAPPED));
 					ov.hEvent = hEv;
-					ret = WriteFile(ptd->players[i].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+
+					ret = WriteFile(td.players[i].hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
 					if (!ret && GetLastError() != ERROR_IO_PENDING) {
 						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
 						break;
 					}
 					if (GetLastError() == ERROR_IO_PENDING) {
-						WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-						GetOverlappedResult(ptd->players[i].hPipe, &ov, &n, FALSE); // obter resultado da operacao
+						WaitForSingleObject(hEv, INFINITE);
+						GetOverlappedResult(td.players[i].hPipe, &ov, &n, FALSE);
 					}
+
+					_tprintf_s(_T("[ARBITRO ALL] Enviei %d bytes ao leitor... (i = %d)\n"), n, i);
 				}
-				_tprintf_s(_T("[ARBITRO ALL] Enviei %d bytes ao leitor...  (i = %d) (WriteFile)\n"), n, i);
 			}
 		}
 
 	} while (ativo);
+
 	EliminarPlayer(ptd, myPos);
+	broadcast.tipo = COMANDO;
+	_stprintf_s(broadcast.comando, TAM, _T("Um jogador %s saiu."),
+		td.players[myPos].name);
+	enviar_todos(ptd, broadcast,myPos);
 	CloseHandle(hEv);
-	_tprintf_s(_T("Theread atende a sair\n"));
+	_tprintf_s(_T("Thread atende a sair\n"));
 	ExitThread(0);
 }
 
-// Nesta thread tratamos os comandos do arbitro e enviamos o que seja necessario para todos os utilizadores
+
 DWORD WINAPI distribui(LPVOID data) {
 	TDATA* ptd = (TDATA*)data;
 	TCHAR buf[256];
 	DWORD n, i;
-	TDATA td;
 	BOOL ret;
 	MENSAGEM msg, resposta;
-	// FOra do cliclo 
+	TDATA td;
+
 	OVERLAPPED ov;
-	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL); // Evento para I/O assíncrono
+
 	do {
+		//==============================//
+		// Ler comando do árbitro       //
+		//==============================//
 		_tprintf_s(_T("[ESCRITOR] Frase: "));
 		_fgetts(msg.comando, 256, stdin);
 		msg.comando[_tcslen(msg.comando) - 1] = '\0';
@@ -561,45 +528,54 @@ DWORD WINAPI distribui(LPVOID data) {
 		td = *ptd;
 		ReleaseMutex(ptd->hMutex);
 
+		// Processar comando
 		resposta = consola_arbitro(msg, ptd);
 
+		//==============================//
+		// Enviar a todos os jogadores  //
+		//==============================//
 		if (resposta.tipo > ERRO) {
 			for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
-				if (ptd->players[i].hPipe != NULL) {
-					//ANTES Da operacao 
+				if (td.players[i].hPipe != NULL) {
 					ZeroMemory(&ov, sizeof(OVERLAPPED));
 					ov.hEvent = hEv;
-					ret = WriteFile(ptd->players[i].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
+
+					ret = WriteFile(td.players[i].hPipe, &resposta, sizeof(MENSAGEM), &n, &ov);
 					if (!ret && GetLastError() != ERROR_IO_PENDING) {
 						_tprintf_s(_T("[ERRO] Escrever no pipe! (WriteFile)\n"));
 						break;
 					}
 					if (GetLastError() == ERROR_IO_PENDING) {
-						WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-						GetOverlappedResult(ptd->players[i].hPipe, &ov, &n, FALSE); // obter resultado da operacao
+						WaitForSingleObject(hEv, INFINITE);
+						GetOverlappedResult(td.players[i].hPipe, &ov, &n, FALSE);
 					}
-					_tprintf_s(_T("[ESCRITOR] Enviei %s bytes ao jogoui...  (i = %d) (WriteFile)\n"), resposta.comando, i);
 
+					_tprintf_s(_T("[ESCRITOR] Enviei '%s' ao jogoui (i = %d)\n"), resposta.comando, i);
 				}
 			}
 		}
 
-	} while (_tcsicmp(buf, _T("fim")));
+	} while (_tcsicmp(msg.comando, _T("fim")));
 
+	//==============================//
+	// Desligar e fechar pipes     //
+	//==============================//
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		if (ptd->players[i].hPipe != NULL) {
 			FlushFileBuffers(ptd->players[i].hPipe);
 			_tprintf_s(_T("[ESCRITOR] Desligar o pipe (DisconnectNamedPipe)\n"));
 			if (!DisconnectNamedPipe(ptd->players[i].hPipe)) {
-				_tprintf_s(_T("[ERRO] Desligar o pipe! (DisconnectNamedPipe)"));
+				_tprintf_s(_T("[ERRO] Desligar o pipe! (DisconnectNamedPipe)\n"));
 				exit(-1);
 			}
 			CloseHandle(ptd->players[i].hPipe);
 		}
 	}
+
 	CloseHandle(hEv);
 	ExitThread(0);
 }
+
 
 void getRegistryValues(int* maxletras, int* ritmo) {
 	HKEY hKey;
@@ -608,7 +584,7 @@ void getRegistryValues(int* maxletras, int* ritmo) {
 	DWORD valMaxLetras = 6;
 	DWORD valRitmo = 3;
 
-	TCHAR chave[] = _T("Software\\TrabSO2");
+	TCHAR chave[] = REGISTRY_NAME;
 
 
 	LSTATUS res = RegOpenKeyEx(
@@ -739,20 +715,30 @@ DWORD getIdLider(TDATA* ptd) {
 	return id_lider;
 }
 
+
 int _tmain(int argc, TCHAR* argv[]) {
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
 	_setmode(_fileno(stdout), _O_WTEXT);
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
+
+	//============================//
+	// Declaração de variáveis   //
+	//============================//
 	DWORD i;
-	HANDLE hPipe;
+	HANDLE hPipe = NULL;
+	HANDLE hMemoPart = NULL;
+	HANDLE hMutexGlobal = NULL;
+	HANDLE hThreadLetras = NULL, hThreadDistribui = NULL;
 	TCHAR buf[256];
 	TDATA td;
 	BOOL isGameOn;
-	HANDLE hMemoPart;
-	HANDLE hThreadLetras, hThreadDistribui;
-	HANDLE hMutexGlobal = CreateMutex(NULL, TRUE, _T("Global\\MutexUnico_ArbitroSO2"));
+
+	//===============================//
+	// Mutex para evitar múltiplos árbitros //
+	//===============================//
+	hMutexGlobal = CreateMutex(NULL, TRUE, _T("Global\\MutexUnico_ArbitroSO2"));
 	if (hMutexGlobal == NULL || GetLastError() == ERROR_ALREADY_EXISTS) {
 		_tprintf(_T("[ERRO] Já existe uma instância do árbitro em execução.\n"));
 		return 1;
@@ -760,87 +746,114 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	srand((unsigned int)time(NULL));
 
+	//===============================//
+	// Ler valores do registo       //
+	//===============================//
 	DWORD max_letras, ritmo;
 	getRegistryValues(&max_letras, &ritmo);
 
 	TCHAR* letras_jogo = (TCHAR*)malloc(max_letras * sizeof(TCHAR));
-	
 	if (letras_jogo == NULL) {
 		_tprintf(_T("Erro a alocar memória!\n"));
 		return 1;
 	}
+
 	for (int i = 0; i < max_letras; i++) {
 		letras_jogo[i] = _T('_');
 	}
 
+	//===============================//
+	// Criar memória partilhada     //
+	//===============================//
 	hMemoPart = CreateFileMapping(
-		INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,       
+		INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
 		0, sizeof(MEMORIA_PARTILHADA), MEMORY_NAME
 	);
 
 	if (hMemoPart == NULL) {
 		_tprintf(_T("Erro ao criar a memória partilhada (%d).\n"), GetLastError());
+		free(letras_jogo);
+		CloseHandle(hMutexGlobal);
 		return 1;
 	}
 
 	MEMORIA_PARTILHADA* memoria = MapViewOfFile(
-		hMemoPart,            
-		FILE_MAP_ALL_ACCESS,0, 0,              
+		hMemoPart,
+		FILE_MAP_ALL_ACCESS, 0, 0,
 		sizeof(MEMORIA_PARTILHADA)
 	);
 
 	if (memoria == NULL) {
 		_tprintf(_T("Erro ao mapear (%d).\n"), GetLastError());
-		CloseHandle(memoria);
+		CloseHandle(hMemoPart);
+		CloseHandle(hMutexGlobal);
+		free(letras_jogo);
 		return 1;
 	}
 
+	// Inicializar memória partilhada
 	for (int i = 0; i < max_letras; ++i) {
 		memoria->letras[i] = _T('_');
 	}
 	memoria->num_letras = max_letras;
 	_stprintf_s(memoria->ultima_palavra, MAX_LETRAS, _T("------"));
 
-
+	//===============================//
+	// Inicializar estrutura TDATA  //
+	//===============================//
 	td.ritmo = ritmo;
 	td.next_id = 0;
 	td.n_users = 0;
 	td.isGameOn = FALSE;
 	td.continua = TRUE;
-	td.hMutex = NULL;
+	td.hMutex = CreateMutex(NULL, FALSE, NULL);
 	td.max_letras = max_letras;
 	td.id_letra = 0;
 	td.memoria_partilhada = memoria;
 	td.id_lider_atual = -1;
+	td.hThreadLetras = NULL;
+
 	for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 		td.players[i].hPipe = NULL;
 		_tcscpy_s(td.players[i].name, TAM_USERNAME, _T("NO_USER"));
 		td.players[i].points = 0;
 	}
-	td.hMutex = CreateMutex(NULL, FALSE, NULL);
-	td.hThreadLetras = NULL;
+
+	//===============================//
+	// Criar thread de distribuição //
+	//===============================//
 	hThreadDistribui = CreateThread(NULL, 0, distribui, (LPVOID)&td, 0, NULL);
 
-	// Criar mutex
-	// CRiar thread
+	//===============================//
+	// Loop principal do árbitro    //
+	//===============================//
 	do {
+		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"), PIPE_NAME);
 
-		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"),
-			PIPE_NAME);
-		hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_WAIT
-			| PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, MAX_CONCURRENT_USERS, sizeof(MENSAGEM), sizeof(MENSAGEM),
-			3000, NULL);
+		hPipe = CreateNamedPipe(
+			PIPE_NAME,
+			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+			PIPE_WAIT | PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE,
+			MAX_CONCURRENT_USERS,
+			sizeof(MENSAGEM),
+			sizeof(MENSAGEM),
+			3000,
+			NULL
+		);
+
 		if (hPipe == INVALID_HANDLE_VALUE) {
-			_tprintf_s(_T("[ERRO] Criar Named Pipe! (CreateNamedPipe)"));
-			exit(-1);
+			_tprintf_s(_T("[ERRO] Criar Named Pipe! (CreateNamedPipe)\n"));
+			break;
 		}
 
 		_tprintf_s(_T("[ARBITRO] Esperar ligação de um jogador... (ConnectNamedPipe)\n"));
 		if (!ConnectNamedPipe(hPipe, NULL)) {
-			_tprintf_s(_T("[ERRO] Ligação ao leitor! (ConnectNamedPipe\n"));
-			exit(-1);
+			_tprintf_s(_T("[ERRO] Ligação ao leitor! (ConnectNamedPipe)\n"));
+			CloseHandle(hPipe);
+			break;
 		}
 
+		// Atribuir jogador à estrutura
 		WaitForSingleObject(td.hMutex, INFINITE);
 		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 			if (td.players[i].hPipe == NULL) {
@@ -850,9 +863,14 @@ int _tmain(int argc, TCHAR* argv[]) {
 		}
 		ReleaseMutex(td.hMutex);
 
-		
-
+		//===============================//
+		// Criar thread para o jogador  //
+		//===============================//
 		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)&td, 0, NULL);
+
+		//===============================//
+		// Criar thread de letras (se ainda não existir) //
+		//===============================//
 		if (td.hThreadLetras == NULL) {
 			td.hThreadLetras = CreateThread(NULL, 0, letras, (LPVOID)&td, 0, NULL);
 			SuspendThread(td.hThreadLetras);
@@ -860,19 +878,19 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	} while (td.continua);
 
-
+	//===============================//
+	// Encerramento e limpeza       //
+	//===============================//
 	WaitForSingleObject(hThreadDistribui, INFINITE);
 	CloseHandle(hThreadDistribui);
 	CloseHandle(td.hMutex);
 	UnmapViewOfFile(memoria);
 	CloseHandle(hMemoPart);
 	CloseHandle(hMutexGlobal);
+	free(letras_jogo);
 
 	return 0;
-
 }
-
-
 
 
 

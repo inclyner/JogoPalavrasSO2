@@ -6,6 +6,7 @@
 #include <winreg.h>
 
 #define PIPE_NAME _T("\\\\.\\pipe\\JogoPalavrasSO2")
+#define REGISTRY_NAME _T("Software\\TrabSO2")
 #define MEMORY_NAME _T("SHARED_MEMORY")
 #define TAM 256
 #define TAM_USERNAME 50
@@ -50,16 +51,12 @@ typedef struct {
 }TDATA;
 
 
-
-
-
-
-
 typedef enum {
 	ERRO = -1,
 	PALAVRA,
 	COMANDO,
-	USERNAME
+	USERNAME,
+	LETRAS
 }MENSAGEM_TYPE;
 
 typedef struct {

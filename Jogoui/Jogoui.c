@@ -26,58 +26,51 @@ typedef struct {
 
 
 DWORD WINAPI recebMsg(LPVOID data) {
-    MENSAGEM msg;
+    MENSAGEM msg = {NULL,NULL};
     HANDLE hPipe = (HANDLE)data;
     BOOL ret, isGameOn = TRUE;
     DWORD n, id = -1;
-
-
-    //FORA CILCO...
     OVERLAPPED ov;
     HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
 
     do {
-
-        //ANTEs da operaçao 
         ZeroMemory(&ov, sizeof(OVERLAPPED));
         ov.hEvent = hEv;
-        //leitor assincrona com o &ov
         ret = ReadFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+
         if (!ret && GetLastError() != ERROR_IO_PENDING) {
-            _tprintf_s(_T("[ERROR] %d (%d bytes)... (ReadFile)\n"), ret, n);
+            _tprintf_s(_T("[ERROR]  %d (%d bytes)... (ReadFile)\n"), ret, n);
             break;
         }
+
         if (GetLastError() == ERROR_IO_PENDING) {
-            WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-            GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+            WaitForSingleObject(hEv, INFINITE);
+            GetOverlappedResult(hPipe, &ov, &n, FALSE); 
         }
 
-        _tprintf_s(_T("[recebMsg] Recebi %s (%d bytes)\n"), msg.comando, n);
-        
-        if (_tcsicmp(msg.comando, _T("-1")) == 0) {
-            _tprintf_s(_T("[ERROR] User invalido"));
-            isGameOn = FALSE; // terminar o jogo
-        }
         switch (msg.tipo){
         case USERNAME:
             _stscanf_s(msg.comando, _T("%d"), &id);
             if (id >= 0) {
-                _tprintf_s(_T("Username valido (%d)\n"),id);
+                _tprintf_s(_T("Seja bem vindo ao Jogo\n"));
             }
             else {
                 _tprintf_s(_T("[ERROR] User invalido"));
                 isGameOn = FALSE;
             }
             break;
+         
         default:
+            _tprintf_s(_T("[ARBITRO] %s\n"),msg.comando);
             break;
         }
 
         ResetEvent(hEv);
-        
-    } while (_tcsicmp(msg.comando, _T(":sair")) || id < 0 || isGameOn);
+       
+    } while (_tcsicmp(msg.comando, _T(":sair")) && _tcsicmp(msg.comando, _T("-1")));
     _tprintf(_T("Thread recebeMsg a TERMINAR.\n"));
     _tprintf(_T("[ARBITRO] Foste excluído. A terminar...\n"));
+    // todo melhorar mensagem de saida
     CloseHandle(hEv);
     ExitThread(0);
 }
@@ -140,53 +133,42 @@ int _tmain(int argc, TCHAR* argv[]) {
         exit(-1);
     }
 
-    _tprintf_s(_T("[ARBITRO] Esperar pelo pipe '%s' (WaitNamedPipe)\n"),
-        PIPE_NAME);
     if (!WaitNamedPipe(PIPE_NAME, NMPWAIT_WAIT_FOREVER)) {
-        _tprintf(_T("[ERRO] Ligar ao pipe '%s'! (WaitNamedPipe)\n"), PIPE_NAME);
+        _tprintf(_T("[ERROR] Arbitro.exe não está a correr\n"));
         exit(-1);
     }
     _tprintf_s(_T("[LEITOR] Ligação ao pipe do escritor... (CreateFile)\n"));
     hPipe = CreateFile(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
         FILE_FLAG_OVERLAPPED, NULL);
     if (hPipe == NULL) {
-        _tprintf_s(_T("[ERRO] Ligar ao pipe '%s'! (CreateFile)\n"), PIPE_NAME);
+        _tprintf_s(_T("[ERROR] Ligar ao pipe '%s'! (CreateFile)\n"), PIPE_NAME);
         exit(-1);
     }
 
-    // envia o user name para saber se é valido
     ZeroMemory(&ov, sizeof(OVERLAPPED));
     ov.hEvent = hEv;
 
     _tcscpy_s(msg.comando, TAM, argv[1]);
     msg.tipo = USERNAME;
-       
 
-
-    ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov); // muder ov
-    if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
+    ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov); 
+    if (!ret && GetLastError() != ERROR_IO_PENDING) { 
         _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), msg.comando, n);
         exit(-1);
     }
     if (GetLastError() == ERROR_IO_PENDING) {
-        WaitForSingleObject(hEv, INFINITE); // esperar pelo fim da operacao
-        GetOverlappedResult(hPipe, &ov, &n, FALSE); // obter resultado da operacao
+        WaitForSingleObject(hEv, INFINITE); 
+        GetOverlappedResult(hPipe, &ov, &n, FALSE); 
     }
-
-    _tprintf_s(_T("[JOGOUI] Tentar login (bytes %d) (%s)\n"), n, argv[1]);
-
-
 
     // TIRa uma mensagem de cada vez 
     DWORD modo = PIPE_READMODE_MESSAGE;
     SetNamedPipeHandleState(hPipe, &modo, NULL, NULL);
 
-    _tprintf_s(_T("[LEITOR] Liguei-me...\n"));
-
     //CRIAR THREAD MSG
 
     HANDLE hThread = CreateThread(NULL, 0, recebMsg, (LPVOID)hPipe, 0, NULL);
-    //FORA CILCO...
+
 
     if (hThread == NULL) {
         _tprintf_s(_T("Erro ao criar thread: %d\n"), GetLastError());
@@ -194,17 +176,13 @@ int _tmain(int argc, TCHAR* argv[]) {
     }
         
     do {
-        //scanf
-        // 
         _tprintf_s(_T("[Leitor] Pedido: "));
         _fgetts(msg.comando, TAM, stdin);
         if(_tcslen(msg.comando) > 0)
             msg.comando[_tcslen(msg.comando) - 1] = _T('\0');
 
-           
         resposta = consola_jogoui(msg);
-        //writefile
-        // ANTES da operacao
+  
         if (resposta.tipo > ERRO) {
             ZeroMemory(&ov, sizeof(OVERLAPPED));
             ov.hEvent = hEv;

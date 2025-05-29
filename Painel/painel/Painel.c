@@ -26,8 +26,11 @@ typedef struct {
     DWORD max_jogadores;
     BOOL continua;
     HANDLE hMutex;
+    HANDLE hThread;
     RECT dim;
     HINSTANCE hInst;
+    HWND hWnd;
+    MEMORIA_PARTILHADA* memoria;
 } TDATA;
 
 
@@ -38,40 +41,17 @@ TCHAR szProgName[] = TEXT("Base");
 
 DWORD WINAPI pintor(LPVOID data) {
     TDATA* ptd = (TDATA*)data;
+    TDATA td;
     MEMORIA_PARTILHADA* memoria;
-    HANDLE hMemoPart;
 
-    hMemoPart = OpenFileMapping(
-        FILE_MAP_ALL_ACCESS,
-        FALSE,
-        MEMORY_NAME
-    );
-
-    if (hMemoPart == NULL) {
-        _tprintf(_T("Erro ao abrir memória partilhada (%d).\n"), GetLastError());
-        return 1;
-    }
-
-    memoria = (LPTSTR)MapViewOfFile(
-        hMemoPart,
-        FILE_MAP_ALL_ACCESS,
-        0, 0,
-        sizeof(MEMORIA_PARTILHADA)
-    );
-
-    if (memoria == NULL) {
-        _tprintf(_T("Erro ao mapear memória (%d).\n"), GetLastError());
-        CloseHandle(hMemoPart);
-        return 1;
-    }
+    WaitForSingleObject(ptd->hMutex, INFINITE);
+    
+    td = *ptd;
+    ReleaseMutex(ptd->hMutex);
 
     do {
-        if (ptd->ativo) {
-            Sleep(1000);
-            WaitForSingleObject(ptd->hMutex, INFINITE);
-            ReleaseMutex(ptd->hMutex);
-        }
-
+        Sleep(1000);
+        InvalidateRect(ptd->hWnd, NULL, TRUE);
     } while (ptd->continua);
 }
 
@@ -99,6 +79,7 @@ LRESULT CALLBACK trataDlg(HWND hDlg, UINT messg, WPARAM wParam, LPARAM lParam) {
             _stscanf_s(str, _T("%d"), &ptd->max_jogadores);
             ReleaseMutex(ptd->hMutex);
             EndDialog(hDlg, 0);
+            InvalidateRect(ptd->hWnd, NULL, TRUE);
             return TRUE;
         case IDCANCEL:
             EndDialog(hDlg, 0);
@@ -162,21 +143,61 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPTSTR lpCmdLine, int
 
 LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lParam) {
     TDATA* ptd;
+    TDATA td;
     HDC hdc;
     PAINTSTRUCT ps;
     RECT dim;
-    POINT pt = {0};
+    POINT pt = { 0 };
     DWORD i;
     SIZE textSize;
     DWORD altura, largura;
+    MEMORIA_PARTILHADA* memoria;
+    HANDLE hMemoPart = NULL;
+    TCHAR ch[2];
+
     switch (messg) {
     case WM_CREATE:
         ptd = (TDATA*)malloc(sizeof(TDATA));
         SetWindowLongPtr(hWnd, 0, (LONG_PTR)ptd);
         GetClientRect(hWnd, &ptd->dim);
+        ptd->hWnd = hWnd;
         ptd->hMutex = CreateMutex(NULL, FALSE, NULL);
+        if (ptd->hMutex == NULL) {
+            MessageBox(NULL, _T("Erro ao criar Mutex"), _T("Erro"), MB_OK);
+            return -1;
+        }
         ptd->max_jogadores = 5;
         ptd->continua = TRUE;
+        ptd->memoria = NULL;
+        ptd->hThread = CreateThread(NULL, 0, pintor, (LPVOID)ptd, 0, NULL);
+        hMemoPart = OpenFileMapping(
+            FILE_MAP_ALL_ACCESS,
+            FALSE,
+            MEMORY_NAME
+        );
+
+        if (hMemoPart == NULL) {
+            _tprintf(_T("Erro ao abrir memória partilhada (%d).\n"), GetLastError());
+            return 1;
+        }
+
+        memoria = (MEMORIA_PARTILHADA* )MapViewOfFile(
+            hMemoPart,
+            FILE_MAP_ALL_ACCESS,
+            0, 0,
+            sizeof(MEMORIA_PARTILHADA)
+        );
+
+        if (memoria == NULL) {
+            _tprintf(_T("Erro ao mapear memória (%d).\n"), GetLastError());
+            CloseHandle(hMemoPart);
+            return 1;
+        }
+
+        WaitForSingleObject(ptd->hMutex, INFINITE);
+        ptd->memoria = memoria;
+        ReleaseMutex(ptd->hMutex);
+
         break;
     case WM_COMMAND:
         ptd = (TDATA*)GetWindowLongPtr(hWnd, 0);
@@ -190,7 +211,7 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
                 break;
             case ID_INFO:
                 MessageBox(hWnd,
-                    _T("Trabalho realizado por: \n\tMarco Pereira 202013341\n"), 
+                    _T("Trabalho realizado por: \n\tMarco Pereira 2020133341\n"),
                     _T("AUTORES:"),
                     MB_OK);
                 break;
@@ -205,19 +226,23 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         GetTextExtentPoint32(hdc, _T("_"), 1, &textSize);
         WaitForSingleObject(ptd->hMutex, INFINITE);
         dim = ptd->dim;
+        td = *ptd;
         ReleaseMutex(ptd->hMutex);
+
 
         // __________TITULO-------------
         TextOut(hdc, 20, 20, _T("Jogo das Palavras"), sizeof(TCHAR) * 9);
         // __________TITULO-------------
         // 
         // __________LETRAS-------------
-        pt.x = (dim.right / 2) - (50 * MAX_LETRAS / 2) - 30;
+        pt.x = (dim.right / 2) - (50 * td.memoria->num_letras / 2) - 30;
         pt.y = 130;
-        for (i = 0; i < MAX_LETRAS; i++) {
+        for (i = 0; i < td.memoria->num_letras; i++) {
             pt.x += 50;
             Rectangle(hdc, pt.x - 15, pt.y - 15, pt.x + 15, pt.y + 15);
-            TextOut(hdc, pt.x - (textSize.cx / 2), pt.y - (textSize.cy / 2), _T("_"), 1);
+            ch[0] = td.memoria->letras[i];
+            ch[1] = '\0';  // or 0
+            TextOut(hdc, pt.x - (textSize.cx / 2), pt.y - (textSize.cy / 2), ch, 1);
         }
         // __________LETRAS-------------
         // 
@@ -226,20 +251,20 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         pt.y = 70;
         Rectangle(hdc, pt.x - 30, pt.y - 15, pt.x + 30, pt.y + 15);
         TextOut(hdc, pt.x - (textSize.cx / 2), pt.y - (textSize.cy / 2), _T("_"), 1);
-        TextOut(hdc, pt.x - 30, pt.y - 35 , _T("Palavra"), 7);
+        TextOut(hdc, pt.x - 30, pt.y - 35,td.memoria->ultima_palavra, lstrlen(td.memoria->ultima_palavra));
 
         // __________PALAVRA-------------
 
         // __________JOGADORES-------------
         pt.x = (dim.right / 2) - 150;
         pt.y = 200;
-        altura = 18 * 20; // 20 -> jogadores 
+        altura = 18 * td.max_jogadores; // 20 -> jogadores 
         largura = 120;
         TextOut(hdc, pt.x - largura, pt.y - 20, _T("Jogadores"), 9);
         Rectangle(hdc, pt.x - largura, pt.y, pt.x + largura, pt.y + altura);
         pt.y += 5;
-        for (i = 0; i < 20; i++) {
-            TextOut(hdc, pt.x - largura + 10, pt.y + i * 17, _T("Jogador"), sizeof(_T("Jogador")) / 2);
+        for (i = 0; i < td.max_jogadores; i++) {
+            TextOut(hdc, pt.x - largura + 10, pt.y + i * 17, _T("Jogador"), lstrlen(_T("Jogador")));
         }
 
 
@@ -247,11 +272,9 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         TextOut(hdc, pt.x - largura, pt.y - 20, _T("Pontuações"), 10);
         Rectangle(hdc, pt.x - largura, pt.y, pt.x + largura, pt.y + altura);
         pt.y += 5;
-        for (i = 0; i < 20; i++) {
+        for (i = 0; i < td.max_jogadores; i++) {
             TextOut(hdc, pt.x - largura + 10, pt.y + i * 17, _T("Pontos"), sizeof(_T("Pontos")) / 2);
         }
-
-
 
 
         // __________JOGADORES-------------
@@ -261,16 +284,22 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         // aqui vai ser o Jogo  
         //Rectangle(hdc, 24, 25, 120, 55);
         //TextOut(hdc, 30, 30,_T("TITULO"),20);
-        
+
+
         break;
     case WM_DESTROY:
         ptd = (TDATA*)GetWindowLongPtr(hWnd, 0);
+        ptd->continua = FALSE; 
+        WaitForSingleObject(ptd->hThread, INFINITE); 
+        CloseHandle(ptd->hThread);
         CloseHandle(ptd->hMutex);
-        DestroyWindow(hWnd);
+        UnmapViewOfFile(ptd->memoria);
+        CloseHandle(hMemoPart);
         free(ptd);
         PostQuitMessage(0);
         break;
     default:
+      
         return DefWindowProc(hWnd, messg, wParam, lParam);
     }
     return 0;

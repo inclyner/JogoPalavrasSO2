@@ -1,5 +1,4 @@
-// Bot.c : This file contains the 'main' function. Program execution begins and ends there.
-//
+
 
 #include <windows.h>
 #include <tchar.h>
@@ -46,6 +45,7 @@ HANDLE esperarPipeServidor(int maxTentativas, int intervaloMs) {
     int tentativas = 0;
 
     do {
+        _tprintf(_T("[DEBUG] Tentativa %d de ligar ao pipe '%s'\n"), tentativas + 1, PIPE_NAME);
         hPipe = CreateFile(
             PIPE_NAME,
             GENERIC_READ | GENERIC_WRITE,
@@ -56,23 +56,29 @@ HANDLE esperarPipeServidor(int maxTentativas, int intervaloMs) {
             NULL);
 
         if (hPipe != INVALID_HANDLE_VALUE) {
-            return hPipe; // Pipe encontrado
+            _tprintf(_T("[DEBUG] Conectado ao pipe com sucesso.\n"));
+            return hPipe; 
         }
 
-        _tprintf(_T("A aguardar o árbitro... (%d/%d)\n"), tentativas + 1, maxTentativas);
+        _tprintf(_T("[DEBUG] Pipe não disponível. A aguardar o árbitro... (%d/%d)\n"), tentativas + 1, maxTentativas);
         Sleep(intervaloMs);
         tentativas++;
 
     } while (tentativas < maxTentativas);
 
+    _tprintf(_T("[DEBUG] Excedeu número máximo de tentativas para ligar ao pipe.\n"));
     return NULL;
 }
 
 BOOL podeJogarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria) {
     TCHAR letras[MAX_LETRAS];
     BOOL usadas[MAX_LETRAS] = { FALSE };
-    _tcsncpy_s(letras, MAX_LETRAS, memoria->letras, memoria->num_letras);
+    _tcsncpy_s(letras, MAX_LETRAS, memoria->letras, min(memoria->num_letras, MAX_LETRAS - 1));
+    letras[MAX_LETRAS - 1] = '\0';
     int len = _tcslen(palavra);
+
+    _tprintf(_T("[DEBUG] Verificando se posso jogar a palavra '%s'...\n"), palavra);
+
     for (int i = 0; i < len; i++) {
         TCHAR c = _totupper(palavra[i]);
         BOOL encontrada = FALSE;
@@ -83,8 +89,12 @@ BOOL podeJogarPalavra(const TCHAR* palavra, MEMORIA_PARTILHADA* memoria) {
                 break;
             }
         }
-        if (!encontrada) return FALSE;
+        if (!encontrada) {
+            _tprintf(_T("[DEBUG] A letra '%c' não está disponível para a palavra '%s'.\n"), c, palavra);
+            return FALSE;
+        }
     }
+    _tprintf(_T("[DEBUG] Palavra '%s' é válida para jogar.\n"), palavra);
     return TRUE;
 }
 
@@ -92,13 +102,39 @@ DWORD WINAPI escutaArbitro(LPVOID data) {
     HANDLE hPipe = (HANDLE)data;
     MENSAGEM msg;
     DWORD n;
-    while (ReadFile(hPipe, &msg, sizeof(MENSAGEM), &n, NULL)) {
+    BOOL ret;
+
+    OVERLAPPED ov;
+    HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL); 
+
+    _tprintf(_T("[DEBUG] Thread escutaArbitro iniciada.\n"));
+
+    while (TRUE) {
+        ZeroMemory(&ov, sizeof(OVERLAPPED));
+        ov.hEvent = hEv;
+        _tprintf(_T("[DEBUG] A aguardar mensagem do árbitro...\n"));
+        ret = ReadFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+
+        if (!ret && GetLastError() != ERROR_IO_PENDING) {
+            _tprintf_s(_T("[ERROR] ReadFile falhou: %d (%d bytes)...\n"), GetLastError(), n);
+            break;
+        }
+
+        if (GetLastError() == ERROR_IO_PENDING) {
+            WaitForSingleObject(hEv, INFINITE);
+            GetOverlappedResult(hPipe, &ov, &n, FALSE);
+        }
+
+        _tprintf(_T("[DEBUG] Mensagem recebida do árbitro: tipo=%d comando='%s'\n"), msg.tipo, msg.comando);
+
         if (_tcscmp(msg.comando, _T(":sair")) == 0) {
             _tprintf(_T("[BOT] Recebi :sair. A sair...\n"));
             ExitProcess(0);
         }
     }
-    return 0;
+
+    _tprintf(_T("[DEBUG] Thread escutaArbitro terminou.\n"));
+    ExitProcess(0);
 }
 
 int _tmain(int argc, TCHAR* argv[]) {
@@ -118,43 +154,107 @@ int _tmain(int argc, TCHAR* argv[]) {
     };
     const int NUM_PALAVRAS = sizeof(DICIONARIO) / sizeof(DICIONARIO[0]);
 
+    _tprintf(_T("[DEBUG] Iniciando bot...\n"));
+
     HANDLE hPipe = esperarPipeServidor(10, 1000);
     if (hPipe == NULL) {
         _tprintf(_T("[ERRO] Não foi possível ligar ao árbitro.\n"));
         exit(EXIT_FAILURE);
     }
 
+    _tprintf(_T("[DEBUG] Pipe do árbitro aberto com handle %p\n"), hPipe);
+
+    OVERLAPPED ov;
+    HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (hEv == NULL) {
+        _tprintf(_T("[ERRO] Falha ao criar evento para overlapped (%d)\n"), GetLastError());
+        return 1;
+    }
+
     // Envia username
     MENSAGEM msg;
     DWORD n;
+    BOOL ret;
     msg.tipo = USERNAME;
     _tcscpy_s(msg.comando, TAM, argc > 1 ? argv[1] : _T("BOT1"));
-    WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, NULL);
+
+    _tprintf(_T("[DEBUG] Enviando USERNAME: %s\n"), msg.comando);
+
+    ZeroMemory(&ov, sizeof(OVERLAPPED));
+    ov.hEvent = hEv;
+    ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+
+    if (!ret && GetLastError() != ERROR_IO_PENDING) {
+        _tprintf_s(_T("[ERROR] WriteFile falhou: %d (%d bytes)...\n"), GetLastError(), n);
+        return 0;
+    }
+
+    if (GetLastError() == ERROR_IO_PENDING) {
+        WaitForSingleObject(hEv, INFINITE);
+        GetOverlappedResult(hPipe, &ov, &n, FALSE);
+    }
+
+    _tprintf(_T("[DEBUG] USERNAME enviado com sucesso (%d bytes).\n"), n);
 
     // Thread para escutar encerramento
-    CreateThread(NULL, 0, escutaArbitro, (LPVOID)hPipe, 0, NULL);
+    HANDLE hThread = CreateThread(NULL, 0, escutaArbitro, (LPVOID)hPipe, 0, NULL);
+
+    if (hThread == NULL) {
+        _tprintf(_T("[ERRO] Erro ao criar a thread escutaArbitro (%d).\n"), GetLastError());
+        return 1;
+    }
+    _tprintf(_T("[DEBUG] Thread escutaArbitro criada com handle %p\n"), hThread);
 
     HANDLE hMemoPart = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMORY_NAME);
     if (hMemoPart == NULL) {
-        _tprintf(_T("Erro ao ligar à memória partilhada (%d).\n"), GetLastError());
+        _tprintf(_T("[ERRO] Erro ao ligar à memória partilhada (%d).\n"), GetLastError());
         return 1;
     }
+    _tprintf(_T("[DEBUG] Memória partilhada aberta com handle %p\n"), hMemoPart);
+
     MEMORIA_PARTILHADA* memoria = (MEMORIA_PARTILHADA*)MapViewOfFile(hMemoPart, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(MEMORIA_PARTILHADA));
+    if (memoria == NULL) {
+        _tprintf(_T("[ERRO] Erro ao mapear a memória (%d).\n"), GetLastError());
+        return 1;
+    }
+    _tprintf(_T("[DEBUG] Memória partilhada mapeada em %p\n"), memoria);
 
     srand((unsigned int)time(NULL));
     while (TRUE) {
-        Sleep((rand() % 26 + 5) * 1000); // espera entre 5 e 30 segundos
+        int waitTime = (rand() % 26 + 5) * 1000;
+        _tprintf(_T("[DEBUG] A dormir %d ms antes de tentar jogar...\n"), waitTime);
+        Sleep(waitTime);
 
         for (int i = 0; i < NUM_PALAVRAS; i++) {
             if (podeJogarPalavra(DICIONARIO[i], memoria)) {
                 msg.tipo = PALAVRA;
                 _tcscpy_s(msg.comando, TAM, DICIONARIO[i]);
-                WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, NULL);
+
+                _tprintf(_T("[DEBUG] A tentar enviar palavra: %s\n"), msg.comando);
+
+                ZeroMemory(&ov, sizeof(OVERLAPPED));
+                ov.hEvent = hEv;
+                ret = WriteFile(hPipe, &msg, sizeof(MENSAGEM), &n, &ov);
+
+                if (!ret && GetLastError() != ERROR_IO_PENDING) {
+                    _tprintf_s(_T("[ERROR] WriteFile falhou: %d (%d bytes)...\n"), GetLastError(), n);
+                    return 0;
+                }
+
+                if (GetLastError() == ERROR_IO_PENDING) {
+                    WaitForSingleObject(hEv, INFINITE);
+                    GetOverlappedResult(hPipe, &ov, &n, FALSE);
+                }
+
                 _tprintf(_T("[BOT] Joguei: %s\n"), DICIONARIO[i]);
                 break;
             }
         }
     }
+
+    CloseHandle(hPipe);
+    UnmapViewOfFile(memoria);
+    CloseHandle(hMemoPart);
 
     return 0;
 }
