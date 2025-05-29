@@ -20,7 +20,7 @@
 typedef struct {
 	HANDLE hPipe;
 	TCHAR name[TAM_USERNAME];
-	DWORD points;
+	float points;
 } PLAYER;
 
 typedef struct {
