@@ -129,6 +129,10 @@ int _tmain(int argc, TCHAR* argv[]) {
     OVERLAPPED ov;
     HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
     MENSAGEM msg, resposta;
+    system("cls");//limpa o ecra
+    _tprintf(_T("===========================================\n"));
+    _tprintf(_T("        JOGO DE PALAVRAS - SO2 (ISEC)      \n"));
+    _tprintf(_T("===========================================\n\n"));
 
     #ifdef UNICODE
 	    _setmode(_fileno(stdin), _O_WTEXT);
@@ -224,6 +228,7 @@ int _tmain(int argc, TCHAR* argv[]) {
     CloseHandle(hEv);
     CloseHandle(hPipe);
     CloseHandle(hThread);
+    free(tData);
     // close thread
     return 0;
 

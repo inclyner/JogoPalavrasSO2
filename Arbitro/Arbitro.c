@@ -348,6 +348,7 @@ MENSAGEM consola_jogoui(MENSAGEM msg, TDATA* ptd, DWORD myPos, DWORD* ativo) {
 		}
 		else if (_tcsicmp(msg.comando, _T(":sair")) == 0) {
 			*ativo = FALSE;
+
 		}
 		break;
 
@@ -727,7 +728,10 @@ int _tmain(int argc, TCHAR* argv[]) {
 	_setmode(_fileno(stdout), _O_WTEXT);
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
-
+	system("cls");//limpa o ecra
+	_tprintf(_T("===========================================\n"));
+	_tprintf(_T("        JOGO DE PALAVRAS - SO2 (ISEC)      \n"));
+	_tprintf(_T("===========================================\n\n"));
 	//============================//
 	// Declaração de variáveis    //
 	//============================//
