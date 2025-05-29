@@ -186,11 +186,10 @@ int _tmain(int argc, TCHAR* argv[]) {
         if (resposta.tipo > ERRO) {
             ZeroMemory(&ov, sizeof(OVERLAPPED));
             ov.hEvent = hEv;
-            _tprintf_s(_T("[Leitor] buf %s  bytes %d \n"), resposta.comando, n);
 
             ret = WriteFile(hPipe, &resposta, sizeof(MENSAGEM), &n, &ov); // muder ov
             if (!ret && GetLastError() != ERROR_IO_PENDING) { // || n != _tcslen(buf) * sizeof(TCHAR)
-                _tprintf_s(_T("[Leitor] %s (%d bytes)... (WriteFile)\n"), resposta.comando, n);
+                _tprintf_s(_T("[ERROR] %s (%d bytes)... (WriteFile)\n"), resposta.comando, n);
                 break;
             }
             if (GetLastError() == ERROR_IO_PENDING) {
@@ -199,7 +198,6 @@ int _tmain(int argc, TCHAR* argv[]) {
                     
             }
 
-            _tprintf_s(_T("[LEITOR] Enviei %d bytes: '%s'... (WriteFile)\n"), n, resposta.comando);
 
         }
     } while (_tcsicmp(resposta.comando, _T(":sair")));

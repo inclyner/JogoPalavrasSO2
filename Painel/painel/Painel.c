@@ -250,9 +250,8 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         // __________PALAVRA-------------
         pt.x = (dim.right / 2);
         pt.y = 70;
-        Rectangle(hdc, pt.x - 30, pt.y - 15, pt.x + 30, pt.y + 15);
-        TextOut(hdc, pt.x - (textSize.cx / 2), pt.y - (textSize.cy / 2), _T("_"), 1);
-        TextOut(hdc, pt.x - 30, pt.y - 35,td.memoria->ultima_palavra, lstrlen(td.memoria->ultima_palavra));
+        Rectangle(hdc, pt.x - 80, pt.y - 15, pt.x + 80, pt.y + 15);
+        TextOut(hdc, pt.x - (textSize.cx / 2), pt.y - (textSize.cy / 2), td.memoria->ultima_palavra, lstrlen(td.memoria->ultima_palavra));
 
         // __________PALAVRA-------------
 

@@ -124,6 +124,10 @@ MENSAGEM consola_arbitro(MENSAGEM msg, TDATA* ptd) {
 	TCHAR* comando_token;
 	TCHAR* token = _tcstok_s(msg.comando, _T(" ,\n"), &comando_token);
 	MENSAGEM resposta;
+	FLOAT maior,maior2;
+	DWORD id_maior;
+	TCHAR aux[TAM];
+	TCHAR nome[TAM_USERNAME];
 	resposta.tipo = ERRO;
 	_stprintf_s(resposta.comando, TAM, _T(""));
 	DWORD i, id;
@@ -141,14 +145,52 @@ MENSAGEM consola_arbitro(MENSAGEM msg, TDATA* ptd) {
 	resposta.tipo = COMANDO;
 
 	if (_tcscmp(token, _T("encerrar")) == 0) {
+		WaitForSingleObject(ptd->hMutex, INFINITE);
+		if (!ptd->isGameOn) {
+			ResumeThread(ptd->hThreadLetras);
+		}
+		else {
+			ptd->isGameOn = FALSE;
+		}
+		ptd->continua = FALSE;
+		ReleaseMutex(ptd->hMutex);
 		// termina a theard 
-		return;
+		resposta.tipo = COMANDO;
+		_tcscpy_s(resposta.comando, TAM, _T("\nJogo a encerrar ...\n"));
+		_stprintf_s(nome, TAM_USERNAME, _T("%s"), _T(""));
+		maior = -1.0;
+		maior2 = -1.0;
+		id_maior = -1;
+		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+			if (td.players[i].hPipe != NULL) {
+				if (td.players[i].points >= maior) {
+					 maior = td.players[i].points;
+					_stprintf_s(nome, TAM_USERNAME, _T("%s"), td.players[i].name);
+					id_maior = i;
+				}
+				
+			}
+		}
+		_stprintf_s(aux, TAM, _T("O vencedor foi %s que ganhou por "), nome);
+		_tcscat_s(resposta.comando, TAM, aux);
+		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
+			if (td.players[i].hPipe != NULL && i != id_maior) {
+				if (td.players[i].points > maior2) {
+					maior2 = td.players[i].points;
+				}
+			}
+		}
+
+		_stprintf_s(aux, TAM, _T("%.1f\n"), maior - maior2);
+		_tcscat_s(resposta.comando, TAM, aux);
+
+		_tprintf_s(_T("%s"), resposta.comando);
 	}
 	else if (_tcscmp(token, _T("listar")) == 0) {
 		_tprintf(_T("Lista de jogadores \n"));
 		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 			if (td.players[i].hPipe != NULL) {
-				_tprintf(_T("Nome: %s \t | Pontos: %.1f\n"), td.players[i].name, td.players[i].points);
+				_tprintf_s(_T("Nome: %s \t | Pontos: %.1f\n"), td.players[i].name, td.players[i].points);
 			}
 		}
 	}
@@ -432,7 +474,7 @@ DWORD WINAPI letras(LPVOID data) {
 	UnmapViewOfFile(memoria);
 	CloseHandle(hMemoPart);
 
-	return 0;
+	ExitThread(0);
 }
 
 
@@ -560,7 +602,7 @@ DWORD WINAPI distribui(LPVOID data) {
 				}
 			}
 		}
-	} while (_tcsicmp(msg.comando, _T("fim")));
+	} while (_tcsicmp(msg.comando, _T("encerrar")));
 
 	//==============================//
 	// Desligar e fechar pipes     //
@@ -576,6 +618,8 @@ DWORD WINAPI distribui(LPVOID data) {
 			CloseHandle(ptd->players[i].hPipe);
 		}
 	}
+
+	_tprintf_s(_T("Thread distribui a sair\n"));
 
 	CloseHandle(hEv);
 	ExitThread(0);
@@ -739,6 +783,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 	TCHAR buf[256];
 	TDATA td;
 	BOOL isGameOn;
+	DWORD erro;
+	BOOL ligado;
 
 	//=======================================//
 	// Mutex para evitar múltiplos árbitros  //
@@ -832,7 +878,18 @@ int _tmain(int argc, TCHAR* argv[]) {
 	//===============================//
 	// Loop principal do árbitro     //
 	//===============================//
+	OVERLAPPED ov;
+	HANDLE hEv = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	if (hEv == NULL) {
+		_tprintf(_T("[ERRO] Falha ao criar evento para overlapped (%d)\n"), GetLastError());
+		return 1;
+	}
+
 	do {
+		ZeroMemory(&ov, sizeof(OVERLAPPED));
+		ov.hEvent = hEv;
+
 		_tprintf_s(_T("[ESCRITOR] Criar uma cópia do pipe '%s' ... (CreateNamedPipe)\n"), PIPE_NAME);
 
 		hPipe = CreateNamedPipe(
@@ -852,13 +909,48 @@ int _tmain(int argc, TCHAR* argv[]) {
 		}
 
 		_tprintf_s(_T("[ARBITRO] Esperar ligação de um jogador... (ConnectNamedPipe)\n"));
-		if (!ConnectNamedPipe(hPipe, NULL)) {
-			_tprintf_s(_T("[ERRO] Ligação ao leitor! (ConnectNamedPipe)\n"));
+
+		ligado = FALSE;
+		if (!ConnectNamedPipe(hPipe, &ov)) {
+			erro = GetLastError();
+			if (erro == ERROR_IO_PENDING) {
+				while (td.continua) {
+					DWORD waitResult = WaitForSingleObject(hEv, 1000);
+					if (waitResult == WAIT_OBJECT_0) {
+						ligado = TRUE;
+						break;
+					}
+				}
+
+				if (!td.continua) {
+					CancelIo(hPipe); 
+					CloseHandle(hPipe);
+					break;
+				}
+			}
+			else if (erro == ERROR_PIPE_CONNECTED) {
+				ligado = TRUE;
+			}
+			else {
+				_tprintf_s(_T("[ERRO] Erro a ligar ao pipe (ConnectNamedPipe) (%d)\n"), erro);
+				CloseHandle(hPipe);
+				break;
+			}
+		}
+		else {
+			ligado = TRUE;
+		}
+
+
+		if (!ligado) {
+			_tprintf_s(_T("[ERROR] Ligação falhou foi cancelada\n"));
 			CloseHandle(hPipe);
 			break;
 		}
 
-		// Atribuir jogador à estrutura
+		//===============================//
+		// Atribuir jogador à estrutura //
+		//===============================//
 		WaitForSingleObject(td.hMutex, INFINITE);
 		for (i = 0; i < MAX_CONCURRENT_USERS; i++) {
 			if (td.players[i].hPipe == NULL) {
@@ -874,18 +966,19 @@ int _tmain(int argc, TCHAR* argv[]) {
 		HANDLE hThreadAtende = CreateThread(NULL, 0, atende_cliente, (LPVOID)&td, 0, NULL);
 
 		//===============================//
-		// Criar thread de letras (se ainda não existir) //
+		// Criar thread de letras (uma vez) //
 		//===============================//
 		if (td.hThreadLetras == NULL) {
 			td.hThreadLetras = CreateThread(NULL, 0, letras, (LPVOID)&td, 0, NULL);
 			SuspendThread(td.hThreadLetras);
 		}
 
+		ResetEvent(hEv);  // prepara para próxima iteração
+
 	} while (td.continua);
 
-	//===============================//
-	// Encerramento e limpeza        //
-	//===============================//
+	_tprintf_s(_T("Thread main a sair\n"));
+	CloseHandle(hEv);
 	WaitForSingleObject(hThreadDistribui, INFINITE);
 	CloseHandle(hThreadDistribui);
 	CloseHandle(td.hMutex);
