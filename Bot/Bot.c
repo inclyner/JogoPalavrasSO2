@@ -145,12 +145,12 @@ int _tmain(int argc, TCHAR* argv[]) {
 #endif
 
     const TCHAR* DICIONARIO[] = {
-        _T("GATO"), _T("CÃO"), _T("RATO"), _T("SAPO"), _T("LOBO"),
-        _T("LIVRO"), _T("BOLA"), _T("MESA"), _T("PORTA"), _T("CASA"),
-        _T("CARRO"), _T("FACA"), _T("PATO"), _T("PEIXE"), _T("CHAVE"),
-        _T("BANCO"), _T("CARTA"), _T("FAROL"), _T("LATA"), _T("FITA"),
-        _T("VIDRO"), _T("TECLA"), _T("JANELA"), _T("CADEIRA"), _T("CAMA"),
-        _T("TINHA"), _T("BICHO"), _T("MANTO"), _T("FUMO"), _T("TROCO")
+    _T("GATO"), _T("CÃO"), _T("RATO"), _T("SAPO"), _T("LOBO"),
+    _T("LIVRO"), _T("BOLA"), _T("MESA"), _T("PORTA"), _T("CASA"),
+    _T("CARRO"), _T("FACA"), _T("PATO"), _T("PEIXE"), _T("CHAVE"),
+    _T("BANCO"), _T("CARTA"), _T("FAROL"), _T("LATA"), _T("FITA"),
+    _T("VIDRO"), _T("TECLA"), _T("JANELA"), _T("CADEIRA"), _T("CAMA"),
+    _T("TINHA"), _T("BICHO"), _T("MANTO"), _T("FUMO"), _T("TROCO"),_T("A"),_T("B"),_T("C"),_T("D"),_T("E"),_T("F"),_T("G"),_T("H"),_T("I"),_T("J"),_T("K"),_T("L"),_T("M"),_T("N"),_T("O"),_T("P"),_T("Q"),_T("R"),_T("S"),_T("T"),_T("U"),_T("V"),_T("W"),_T("X"),_T("Y"),_T("Z")
     };
     const int NUM_PALAVRAS = sizeof(DICIONARIO) / sizeof(DICIONARIO[0]);
 

@@ -148,7 +148,7 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
     PAINTSTRUCT ps;
     RECT dim;
     POINT pt = { 0 };
-    DWORD i;
+    DWORD i,j;
     SIZE textSize;
     DWORD altura, largura;
     MEMORIA_PARTILHADA* memoria;
@@ -211,7 +211,7 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
                 break;
             case ID_INFO:
                 MessageBox(hWnd,
-                    _T("Trabalho realizado por: \n\tMarco Pereira 2020133341\n"),
+                    _T("Trabalho realizado por: \n\tMarco Pereira 2020133341\n\tFrancisco Carvalho 2019129635\n"),
                     _T("AUTORES:"),
                     MB_OK);
                 break;
@@ -263,8 +263,15 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         TextOut(hdc, pt.x - largura, pt.y - 20, _T("Jogadores"), 9);
         Rectangle(hdc, pt.x - largura, pt.y, pt.x + largura, pt.y + altura);
         pt.y += 5;
-        for (i = 0; i < td.max_jogadores; i++) {
-            TextOut(hdc, pt.x - largura + 10, pt.y + i * 17, _T("Jogador"), lstrlen(_T("Jogador")));
+        TCHAR linha[100];
+        // Jogadores
+        j = 0;
+        for (i = 0; i < MAX_CONCURRENT_USERS && j < td.max_jogadores; i++) {
+            if (_tcscmp(td.memoria->players[i].name, _T("")) != 0) {
+                _stprintf_s(linha, 100, _T("%s"), td.memoria->players[i].name);
+                TextOut(hdc, pt.x - largura + 10, pt.y + j * 17, linha, _tcslen(linha));
+                j++;
+            }
         }
 
 
@@ -272,8 +279,17 @@ LRESULT CALLBACK trataEventos(HWND hWnd, UINT messg, WPARAM wParam, LPARAM lPara
         TextOut(hdc, pt.x - largura, pt.y - 20, _T("Pontuações"), 10);
         Rectangle(hdc, pt.x - largura, pt.y, pt.x + largura, pt.y + altura);
         pt.y += 5;
-        for (i = 0; i < td.max_jogadores; i++) {
-            TextOut(hdc, pt.x - largura + 10, pt.y + i * 17, _T("Pontos"), sizeof(_T("Pontos")) / 2);
+
+        // Pontos
+        pt.x = (dim.right / 2) + 150;
+        //pt.y -= j * 17; // reposicionar pt.y para alinhar com nomes
+        j = 0;
+        for (i = 0; i < MAX_CONCURRENT_USERS && j < td.max_jogadores; i++) {
+            if (_tcscmp(td.memoria->players[i].name, _T("")) != 0) {
+                _stprintf_s(linha, 100, _T("%.1f"), td.memoria->players[i].points);
+                TextOut(hdc, pt.x - largura + 10, pt.y + j * 17, linha, _tcslen(linha));
+                j++;
+            }
         }
 
 
